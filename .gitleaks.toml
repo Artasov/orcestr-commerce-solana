@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public Solana Token-2022 payer ATA used by frozen transaction fixtures"
+regexTarget = "line"
+regexes = [
+  '''9DdB3X4caQd5hpDRnzNg58Kzvx82VKtmAfJggyjgD8eY''',
+]
+stopwords = [
+  '''9DdB3X4caQd5hpDRnzNg58Kzvx82VKtmAfJggyjgD8eY''',
+]

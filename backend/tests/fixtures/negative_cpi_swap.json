@@ -1,0 +1,19 @@
+{
+  "fixture": "issued_message_with_inner_program_invocation",
+  "mainnet_example_signature": "5ikgUnvJVKrj2EHsQr63szVouh8qenbMUsQXGrbnYbBECMjffoQ7WFZX4h7bM4aAtdbNrh4L6pTxd6xCV9h5Rpns",
+  "meta": {
+    "innerInstructions": [
+      {
+        "index": 0,
+        "instructions": [
+          {
+            "programIdIndex": 6,
+            "accounts": [0, 1, 2],
+            "data": "3Bxs4NN8M2Yn4TLb"
+          }
+        ]
+      }
+    ]
+  },
+  "expected_reason": "unsupported_cpi_or_swap"
+}
