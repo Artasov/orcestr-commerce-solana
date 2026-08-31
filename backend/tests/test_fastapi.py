@@ -104,6 +104,19 @@ class FailingCapabilityService(FakeApiService):
         raise self.error
 
 
+class FailingCandidateService(FakeApiService):
+    """Raises one typed candidate-budget error from the authenticated endpoint."""
+
+    async def submit_candidate(self, payment_public_id, request, actor) -> SolanaIntentDTO:
+        _ = payment_public_id
+        _ = request
+        _ = actor
+        raise SolanaCommerceError(
+            SolanaErrorCode.CANDIDATE_LIMIT_REACHED,
+            "sensitive internal detail",
+        )
+
+
 class TestSolanaFastApiRouter:
     """Covers typed auth/CSRF ports and public capability cache headers."""
 
@@ -169,6 +182,28 @@ class TestSolanaFastApiRouter:
 
         assert response.status_code == 422
         assert response.headers["cache-control"] == "no-store, no-cache"
+
+    def test_candidate_limit_is_typed_private_conflict(self, native_settlement, now) -> None:
+        payment_public_id = uuid4()
+        client, access, csrf_calls = self._client(
+            native_settlement,
+            now,
+            service_factory=FailingCandidateService,
+        )
+
+        response = client.post(
+            f"/commerce/solana/payment-intents/{payment_public_id}/candidate-signatures",
+            json={"signature": "1" * 64},
+        )
+
+        assert response.status_code == 409
+        assert response.json() == {
+            "code": "candidate_limit_reached",
+            "message": "This payment intent cannot check more candidate signatures.",
+        }
+        assert response.headers["cache-control"] == "no-store, no-cache"
+        assert access.calls == [("user:7", payment_public_id, "payments:write")]
+        assert csrf_calls == [True]
 
     def test_transaction_request_post_ignores_future_protocol_fields(self, native_settlement, now) -> None:
         client, _, _ = self._client(native_settlement, now)

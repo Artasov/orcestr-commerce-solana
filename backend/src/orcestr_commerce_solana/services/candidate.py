@@ -8,6 +8,7 @@ from orcestr_commerce_solana.models import SolanaPaymentIntentORM, SolanaTransac
 from orcestr_commerce_solana.repositories import SqlAlchemyUsedSignatureRegistry
 from orcestr_commerce_solana.rpc.protocol import SolanaRpc
 from orcestr_commerce_solana.schemas.assets import SettlementSnapshot
+from orcestr_commerce_solana.schemas.intents import SolanaIntentState
 from orcestr_commerce_solana.schemas.transactions import TransactionIssuanceSnapshot, TransactionVersion
 from orcestr_commerce_solana.services.settlement import SolanaSettlementService
 from orcestr_commerce_solana.services.verification.contracts import (
@@ -15,7 +16,20 @@ from orcestr_commerce_solana.services.verification.contracts import (
     VerificationRequest,
     VerificationResult,
 )
-from orcestr_commerce_solana.services.verification.verifier import SolanaTransactionVerifier
+from orcestr_commerce_solana.services.verification.verifier import (
+    PreparedTransactionVerification,
+    SolanaTransactionVerifier,
+)
+
+
+class _PrepareOnlyUsedSignatureRegistry:
+    """Satisfies verifier construction; prepare never consults persistence."""
+
+    async def is_used(self, cluster: str, signature: str, intent_public_id) -> bool:
+        _ = cluster
+        _ = signature
+        _ = intent_public_id
+        raise RuntimeError("Prepared transaction verification cannot query used signatures.")
 
 
 class SolanaCandidateProcessor:
@@ -36,15 +50,30 @@ class SolanaCandidateProcessor:
         self.settlement = settlement
         self.max_issuances_per_intent = max_issuances_per_intent
 
+    async def prepare(self, signature: str) -> PreparedTransactionVerification:
+        """Performs network reads without holding a host database transaction."""
+
+        verifier = SolanaTransactionVerifier(
+            self.rpc,
+            _PrepareOnlyUsedSignatureRegistry(),
+        )
+        return await verifier.prepare(signature)
+
     async def process(
         self,
         session: AsyncSession,
         intent: SolanaPaymentIntentORM,
         signature: str,
         *,
+        prepared: PreparedTransactionVerification,
         actor_key: str | None = None,
     ) -> VerificationResult | None:
         """Applies only a result tied to one persisted issuance message."""
+        if (
+            intent.state != SolanaIntentState.WAITING.value
+            or database_utc_datetime(intent.expires_at) <= self.clock.now()
+        ):
+            return None
         query = (
             select(SolanaTransactionIssuanceORM)
             .where(SolanaTransactionIssuanceORM.intent_id == intent.id)
@@ -55,7 +84,6 @@ class SolanaCandidateProcessor:
         if not issuances:
             return None
         verifier = SolanaTransactionVerifier(self.rpc, SqlAlchemyUsedSignatureRegistry(session))
-        prepared = await verifier.prepare(signature)
         settlement = SettlementSnapshot.model_validate(intent.settlement_snapshot)
         for issuance in issuances:
             result = await verifier.verify(

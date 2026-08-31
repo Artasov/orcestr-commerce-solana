@@ -170,20 +170,50 @@ class SolanaApplicationService:
         request: CandidateSignatureRequest,
         actor: SolanaActor,
     ) -> SolanaIntentDTO:
-        """Persists a hint, immediately verifies issued messages, and returns REST state."""
+        """Durably claims a bounded hint before doing RPC outside a DB transaction."""
+        async with self.session_factory() as session, session.begin():
+            await self.payment_runtime.get_payment_status(
+                session,
+                payment_public_id,
+                self._commerce_actor(actor),
+            )
+            claim = await self.intents.claim_candidate(
+                session,
+                payment_public_id,
+                request.signature,
+                actor_key=actor.actor_key,
+            )
+
+        prepared = None
+        if claim.is_new and claim.has_issuances:
+            prepared = await self.candidates.prepare(request.signature)
+
         async with self.session_factory() as session, session.begin():
             payment = await self.payment_runtime.get_payment_status(
                 session,
                 payment_public_id,
                 self._commerce_actor(actor),
             )
-            intent = await self.intents.record_candidate(session, payment_public_id, request.signature)
-            await self.candidates.process(session, intent, request.signature, actor_key=actor.actor_key)
-            payment = await self.payment_runtime.get_payment_status(
+            intent = await self.intents.get_by_payment_public_id(
                 session,
                 payment_public_id,
-                self._commerce_actor(actor),
+                for_update=prepared is not None,
             )
+            if intent is None:
+                raise self.payment_runtime.get_not_found("Solana payment intent not found.")
+            if prepared is not None:
+                await self.candidates.process(
+                    session,
+                    intent,
+                    request.signature,
+                    prepared=prepared,
+                    actor_key=actor.actor_key,
+                )
+                payment = await self.payment_runtime.get_payment_status(
+                    session,
+                    payment_public_id,
+                    self._commerce_actor(actor),
+                )
             return SolanaIntentSerializer.serialize(intent, payment)
 
     async def cancel_intent(

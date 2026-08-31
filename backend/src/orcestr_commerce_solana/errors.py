@@ -24,6 +24,11 @@ class SolanaErrorCode(StrEnum):
     CAPABILITY_INVALID = "capability_invalid"
     CAPABILITY_EXPIRED = "capability_expired"
     ISSUANCE_LIMIT_REACHED = "issuance_limit_reached"
+    CANDIDATE_LIMIT_REACHED = "candidate_limit_reached"
+    REFERENCE_CANDIDATE_BUDGET_EXCEEDED = "reference_candidate_budget_exceeded"
+    CANDIDATE_VERIFICATION_GLOBAL_BUDGET_EXHAUSTED = (
+        "candidate_verification_global_budget_exhausted"
+    )
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
     INTENT_EXPIRED = "intent_expired"
     TRANSACTION_NOT_FOUND = "transaction_not_found"

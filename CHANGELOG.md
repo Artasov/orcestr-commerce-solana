@@ -2,6 +2,16 @@
 
 All notable changes to Orcestr Commerce Solana are documented in this file.
 
+## 0.2.2 - 2026-09-01
+
+- Replace attacker-amplifiable reference pagination with one budget-plus-one history window, 16 candidate preparations per intent, and 32 preparations per reconciliation pass by default.
+- Quarantine overflowing reference histories for manual review without expiring an unmatched payment or changing an already paid/terminal financial outcome.
+- Keep RPC `UNKNOWN` results retryable and prevent them from completing expiry, terminal audit, or paid duplicate audit.
+- Let a known exact pre-horizon match settle alongside unrelated `UNKNOWN` evidence, and fence quarantine against stale worker rescheduling with its append-only event.
+- Durably cap authenticated candidate submissions at 16 unique signatures per intent; exact duplicate submissions perform no immediate RPC work.
+- Commit a new candidate claim before Solana RPC reads and apply its result in a separate locked transaction.
+- Replace the unsafe `signature_page_size` and `max_signature_pages` host settings with `max_candidate_verifications_per_intent` and `max_candidate_verifications_per_pass`.
+
 ## 0.2.1 - 2026-08-31
 
 - Settle an exact finalized transfer submitted within its issuance acceptance window when reference reconciliation discovers it after public intent expiry but before the immutable reconciliation horizon.

@@ -40,9 +40,11 @@ JSON is snake_case. Raw amounts and rates are decimal strings. `action` is nulla
 
 The Solana Pay POST requires a canonical payer `account` and ignores unknown request fields as required for forward-compatible protocol extensions. The optional GET `icon` must be an absolute credential-free HTTP(S) image URL controlled by the merchant.
 
-Every successful or failed HTTP response that contains or may contain an action/capability must set `Cache-Control: no-store, no-cache`, `Pragma: no-cache`, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`. The package router applies these headers to create/get/candidate/cancel/action responses and to both public transaction-request methods. A host endpoint that wraps CommerceXL checkout responses outside this router must apply the same policy. Package errors use `{"code": "...", "message": "..."}`; invalid, expired, malformed, Unicode, or oversized capabilities are the same safe 404. RPC outages are 503 with `Retry-After: 5`, and the per-intent issuance limit is 409.
+Every successful or failed HTTP response that contains or may contain an action/capability must set `Cache-Control: no-store, no-cache`, `Pragma: no-cache`, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`. The package router applies these headers to create/get/candidate/cancel/action responses and to both public transaction-request methods. A host endpoint that wraps CommerceXL checkout responses outside this router must apply the same policy. Package errors use `{"code": "...", "message": "..."}`; invalid, expired, malformed, Unicode, or oversized capabilities are the same safe 404. RPC outages are 503 with `Retry-After: 5`; per-intent issuance and candidate-check limits are 409. A candidate signature is claimed and committed before RPC. The default lifetime limit is `max_candidate_checks_per_intent=16`; an exact duplicate is idempotent and performs no immediate RPC read.
 
 Create the background service with `create_sqlalchemy_reconciler(...)`. Schedule bounded calls to `reconcile_pending(limit=config.max_reconciliation_batch, now=clock.now())`. Do not add frontend polling: publish `CommercePaymentUpdatedEvent` through the host shared WebSocket after committed state changes and invalidate the payment/order queries.
+
+Version 0.2.2 removes `signature_page_size` and `max_signature_pages`. Configure `max_candidate_verifications_per_intent=16` and `max_candidate_verifications_per_pass=32`. The global value must cover at least one complete per-intent budget. Automatic discovery performs one `getSignaturesForAddress` call with `per_intent + 1` entries and never follows a cursor. More qualifying signatures park the intent with `reference_candidate_budget_exceeded`; active payments move to review, while paid/cancelled/expired financial states remain unchanged. Operator tooling should verify an explicitly supplied signature instead of paginating the poisoned reference index.
 
 The host migration must include non-null indexed `commerce_solana_payment_intent.reconcile_until` with `reconcile_until > expires_at`, and non-null `commerce_solana_transaction_issuance.issued_context_slot >= 0`. New intents snapshot `reconcile_until = expires_at + terminal_reconciliation_grace`. Do not derive either fact during later reconciliation.
 
@@ -50,7 +52,7 @@ The host migration must include non-null indexed `commerce_solana_payment_intent
 
 RPC is an injectable standard HTTP JSON-RPC client. Configure multiple HTTPS endpoints or a self-hosted node. Loopback HTTP is accepted only for `localhost`, `127.0.0.1`, and `[::1]` in development. Cluster names are restricted to `mainnet-beta`, `devnet`, and `testnet`, and must match their exact genesis hash.
 
-No RPC API fee is required by the protocol. Public endpoints have rate limits and no availability SLA, so production should configure redundancy and monitor `UNKNOWN`/backlog metrics.
+No RPC API fee is required by the protocol. Public endpoints have rate limits and no availability SLA, so production should configure redundancy and monitor `UNKNOWN`, budget exhaustion, quarantine and backlog metrics. With a public endpoint, start with a host batch size of 25; the package additionally caps expensive candidate preparations globally.
 
 ## Local package development
 

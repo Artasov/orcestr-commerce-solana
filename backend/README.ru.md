@@ -40,7 +40,7 @@ verifier = SolanaTransactionVerifier(rpc, used_signatures=my_database_signature_
 
 - `SolanaApplicationService.build_default(...)` реализует authenticated checkout flow.
 - `SolanaFastApiRouterFactory` даёт typed routes; host внедряет Orcestr Auth actor, ownership и CSRF dependencies.
-- `create_sqlalchemy_reconciler(...)` даёт lease для конкурентных workers, DB-проверку уникальности signature, пагинацию reference history и безопасное истечение intent.
+- `create_sqlalchemy_reconciler(...)` даёт lease для конкурентных workers, DB-проверку уникальности signature, одно ограниченное окно reference history и безопасные expiry/quarantine semantics.
 - `SolanaProviderRegistrationFactory` явно регистрирует provider в CommerceXL 0.3.2 или новее. Версия 0.3.2 обязательна: payment option содержит неизменяемый snapshot суммы и валюты заказа, а state machine разрешает истечение предварительно подтверждённого платежа после полного финального scan по reference.
 
 `SolanaProviderDependencies` требует host-реализацию `SettlementPriceKeyResolver`. Она должна вернуть стабильный код конкретного продукта, плана или pack; широкий `order.kind` намеренно не используется как fallback. Для продуктов с ценой в базе в той же валюте, что и выбранный asset, рекомендуется exact-стратегия:
@@ -57,6 +57,8 @@ quotes = OrderSnapshotSettlementQuoteProvider(
 Provider требует `order.currency == configured currency` для конкретного validated asset option, преобразует human decimal заказа через `SolanaAmountCodec`, отклоняет лишнюю дробную точность без округления и проверяет positive u64 и asset min/max. Identity задаётся validated option/mint; display symbol никогда не участвует в security-проверке. В immutable quote фиксируются `source="order_snapshot"` и `rounding="exact"`. `FixedSettlementQuoteProvider` остаётся отдельной стратегией для заранее рассчитанных raw-цен с ключом `(resolved_price_key, asset_option_id)`, но не является рекомендуемым путём для каталожных цен. `RecipientResolver` одинаково поддерживает treasury Beauty и P2P-получателя, уже проверенного host-приложением.
 
 Число transaction issuance ограничено `max_issuances_per_intent` (по умолчанию 16) под row lock intent. `expires_at` закрывает публичные действия оплаты. До `reconcile_until` reconciliation всё равно засчитывает exact finalized-перевод, если его on-chain `block_time` попадает в неизменяемое окно принятия issuance, а exact confirmed evidence ожидает finality. На границе этого горизонта и после неё proof сохраняется fail-closed как terminal evidence без выдачи продукта. Перевод вне окна принятия или перевод уже cancelled/expired intent также никогда не выдаёт продукт.
+
+Authenticated candidate checks имеют durable-лимит 16 уникальных signatures на intent; точный duplicate не вызывает RPC немедленно. Automatic reference discovery проверяет максимум 16 candidates на intent и 32 за worker pass, читает одно окно из 17 записей и не пагинирует недоверенную историю. Overflow переводит активный payment в review либо останавливает audit уже paid/terminal payment без изменения его финансового результата.
 
 Подробности: [архитектура](https://github.com/Artasov/orcestr-commerce-solana/blob/main/backend/docs/architecture.md), [подключение к host](https://github.com/Artasov/orcestr-commerce-solana/blob/main/backend/docs/integration.md), [security contract](https://github.com/Artasov/orcestr-commerce-solana/blob/main/backend/docs/security.md).
 

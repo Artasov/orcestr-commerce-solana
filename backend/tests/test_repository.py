@@ -136,7 +136,12 @@ class TestSolanaIntentRepository:
                 SolanaIntentState.CANCELLED,
             )
             with pytest.raises(SolanaCommerceError) as error:
-                await repository.record_candidate(session, payment_public_id, str(Signature.new_unique()))
+                await repository.claim_candidate(
+                    session,
+                    payment_public_id,
+                    str(Signature.new_unique()),
+                    actor_key="user:1",
+                )
             assert error.value.code == SolanaErrorCode.INTENT_EXPIRED
         await engine.dispose()
 
@@ -156,10 +161,84 @@ class TestSolanaIntentRepository:
             )
             intent.expires_at = now - timedelta(seconds=1)
             with pytest.raises(SolanaCommerceError) as error:
-                await repository.record_candidate(session, payment_public_id, str(Signature.new_unique()))
+                await repository.claim_candidate(
+                    session,
+                    payment_public_id,
+                    str(Signature.new_unique()),
+                    actor_key="user:1",
+                )
 
             assert error.value.code == SolanaErrorCode.INTENT_EXPIRED
             assert intent.candidate_signature is None
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_candidate_claims_are_duplicate_safe_and_lifetime_bounded(
+        self,
+        now,
+        native_settlement,
+    ) -> None:
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as connection:
+            await connection.run_sync(CommerceBase.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        repository = SolanaIntentRepository(
+            self._config(max_candidate_checks_per_intent=2),
+            FrozenClock(now),
+        )
+        first_signature = str(Signature.new_unique())
+        second_signature = str(Signature.new_unique())
+        async with factory() as session, session.begin():
+            payment_public_id, intent = await add_payment_and_intent(
+                session,
+                now,
+                native_settlement,
+                SolanaIntentState.WAITING,
+            )
+
+            first = await repository.claim_candidate(
+                session,
+                payment_public_id,
+                first_signature,
+                actor_key="user:1",
+            )
+            duplicate = await repository.claim_candidate(
+                session,
+                payment_public_id,
+                first_signature,
+                actor_key="user:1",
+            )
+            second = await repository.claim_candidate(
+                session,
+                payment_public_id,
+                second_signature,
+                actor_key="user:1",
+            )
+            with pytest.raises(SolanaCommerceError) as error:
+                await repository.claim_candidate(
+                    session,
+                    payment_public_id,
+                    str(Signature.new_unique()),
+                    actor_key="user:1",
+                )
+            claimed_events = int(
+                await session.scalar(
+                    select(func.count(SolanaPaymentEventORM.id)).where(
+                        SolanaPaymentEventORM.intent_id == intent.id,
+                        SolanaPaymentEventORM.event_type
+                        == "solana.payment.candidate_claimed",
+                    )
+                )
+                or 0
+            )
+
+            assert first.is_new is True
+            assert first.has_issuances is False
+            assert duplicate.is_new is False
+            assert second.is_new is True
+            assert claimed_events == 2
+            assert intent.revision == 2
+            assert error.value.code == SolanaErrorCode.CANDIDATE_LIMIT_REACHED
         await engine.dispose()
 
     @pytest.mark.asyncio
@@ -375,6 +454,8 @@ class TestSolanaIntentRepository:
             SolanaSettlementService(runtime, FrozenClock(now)),
             max_issuances_per_intent=config.max_issuances_per_intent,
         )
+        signature = str(Signature.new_unique())
+        prepared = await processor.prepare(signature)
         async with factory() as session, session.begin():
             _, intent = await add_payment_and_intent(
                 session,
@@ -406,7 +487,12 @@ class TestSolanaIntentRepository:
             )
             await session.flush()
 
-            result = await processor.process(session, intent, str(Signature.new_unique()))
+            result = await processor.process(
+                session,
+                intent,
+                signature,
+                prepared=prepared,
+            )
             reissued = await repository.issue_action(session, intent)
 
             assert result is not None
@@ -417,11 +503,12 @@ class TestSolanaIntentRepository:
         await engine.dispose()
 
     @staticmethod
-    def _config() -> SolanaCommerceConfig:
+    def _config(**overrides) -> SolanaCommerceConfig:
         return SolanaCommerceConfig(
             public_base_url="https://pay.example.com",
             merchant_label="Merchant",
             enable_native_sol=True,
+            **overrides,
         )
 
 
@@ -575,6 +662,204 @@ class TestSolanaSettlementService:
             assert persisted is not None
             assert persisted.state == SolanaIntentState.EXPIRED.value
             assert persisted.next_check_at is None
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_reference_overflow_quarantine_is_durable_and_not_reclaimed(
+        self,
+        now,
+        native_settlement,
+    ) -> None:
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as connection:
+            await connection.run_sync(CommerceBase.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        runtime = FakePaymentRuntime()
+        clock = FrozenClock(now)
+        store = SqlAlchemyReconciliationStore(
+            factory,
+            SolanaSettlementService(runtime, clock),
+            clock,
+            max_issuances_per_intent=16,
+        )
+        async with factory() as session, session.begin():
+            _, intent = await add_payment_and_intent(
+                session,
+                now,
+                native_settlement,
+                SolanaIntentState.WAITING,
+            )
+            intent_public_id = intent.public_id
+
+        await store.quarantine(
+            intent_public_id,
+            SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+        )
+        await store.quarantine(
+            intent_public_id,
+            SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+        )
+
+        assert await store.list_pending(limit=10, now=now) == ()
+        async with factory() as session:
+            persisted = await session.scalar(
+                select(SolanaPaymentIntentORM).where(
+                    SolanaPaymentIntentORM.public_id == intent_public_id,
+                )
+            )
+            event_count = int(
+                await session.scalar(
+                    select(func.count(SolanaPaymentEventORM.id)).where(
+                        SolanaPaymentEventORM.intent_id == persisted.id,
+                        SolanaPaymentEventORM.event_type
+                        == "solana.payment.reference_scan_quarantined",
+                    )
+                )
+                or 0
+            )
+            assert persisted.state == SolanaIntentState.REVIEW.value
+            assert persisted.reason_code == "reference_candidate_budget_exceeded"
+            assert persisted.next_check_at is None
+            assert event_count == 1
+        assert runtime.results[-1].state == PaymentState.REVIEW
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "state",
+        (
+            SolanaIntentState.PAID,
+            SolanaIntentState.CANCELLED,
+            SolanaIntentState.EXPIRED,
+        ),
+    )
+    async def test_financial_quarantine_fences_stale_retry(
+        self,
+        now,
+        native_settlement,
+        state,
+    ) -> None:
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as connection:
+            await connection.run_sync(CommerceBase.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        clock = FrozenClock(now)
+        store = SqlAlchemyReconciliationStore(
+            factory,
+            SolanaSettlementService(FakePaymentRuntime(), clock),
+            clock,
+            max_issuances_per_intent=16,
+        )
+        async with factory() as session, session.begin():
+            _, intent = await add_payment_and_intent(
+                session,
+                now,
+                native_settlement,
+                state,
+            )
+            intent_public_id = intent.public_id
+
+        await store.quarantine(
+            intent_public_id,
+            SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+        )
+        await store.mark_retry(intent_public_id, "stale_worker")
+
+        assert await store.list_pending(limit=10, now=now + timedelta(minutes=1)) == ()
+        async with factory() as session:
+            persisted = await session.scalar(
+                select(SolanaPaymentIntentORM).where(
+                    SolanaPaymentIntentORM.public_id == intent_public_id,
+                )
+            )
+            assert persisted.state == state.value
+            assert persisted.reason_code == "reference_candidate_budget_exceeded"
+            assert persisted.next_check_at is None
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_terminal_quarantine_fences_stale_evidence(self, now, native_settlement) -> None:
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as connection:
+            await connection.run_sync(CommerceBase.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        clock = FrozenClock(now)
+        store = SqlAlchemyReconciliationStore(
+            factory,
+            SolanaSettlementService(FakePaymentRuntime(), clock),
+            clock,
+            max_issuances_per_intent=16,
+        )
+        async with factory() as session, session.begin():
+            _, intent = await add_payment_and_intent(
+                session,
+                now,
+                native_settlement,
+                SolanaIntentState.EXPIRED,
+            )
+            capability = SolanaIntentCapabilityORM(
+                public_id=uuid4(),
+                intent_id=intent.id,
+                secret_sha256="a" * 64,
+                expires_at=now,
+                created_at=now - timedelta(minutes=10),
+            )
+            session.add(capability)
+            await session.flush()
+            issuance_public_id = uuid4()
+            session.add(
+                SolanaTransactionIssuanceORM(
+                    public_id=issuance_public_id,
+                    intent_id=intent.id,
+                    capability_id=capability.id,
+                    payer=str(Pubkey.new_unique()),
+                    recent_blockhash=str(Pubkey.new_unique()),
+                    last_valid_block_height=1000,
+                    issued_context_slot=800,
+                    message_sha256="b" * 64,
+                    transaction_version=TransactionVersion.V0.value,
+                    issued_at=now - timedelta(minutes=10),
+                    accepts_until=now - timedelta(minutes=5),
+                )
+            )
+            intent_public_id = intent.public_id
+        result = VerificationResult(
+            disposition=VerificationDisposition.MATCH,
+            commitment=SolanaCommitment.FINALIZED,
+            transfer=VerifiedTransfer(
+                cluster=native_settlement.cluster,
+                signature=str(Signature.new_unique()),
+                issuance_public_id=issuance_public_id,
+                instruction_index=1,
+                source_account=str(Pubkey.new_unique()),
+                destination_account=native_settlement.recipient_wallet,
+                gross_raw_amount=native_settlement.expected_raw_amount,
+                net_raw_amount=native_settlement.expected_raw_amount,
+                slot=950,
+                block_time=now,
+                commitment=SolanaCommitment.FINALIZED,
+                transaction_version=TransactionVersion.V0,
+                detection_source="reference_scan",
+                evidence_sha256="c" * 64,
+            ),
+        )
+
+        await store.quarantine(
+            intent_public_id,
+            SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+        )
+        assert await store.apply_terminal_evidence(intent_public_id, result) is False
+
+        async with factory() as session:
+            persisted = await session.scalar(
+                select(SolanaPaymentIntentORM).where(
+                    SolanaPaymentIntentORM.public_id == intent_public_id,
+                )
+            )
+            transfer_count = int(await session.scalar(select(func.count(SolanaTransferORM.id))) or 0)
+            assert persisted.reason_code == "reference_candidate_budget_exceeded"
+            assert persisted.next_check_at is None
+            assert transfer_count == 0
         await engine.dispose()
 
     @pytest.mark.asyncio

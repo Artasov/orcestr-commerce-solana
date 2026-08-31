@@ -7,7 +7,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from orcestr_commerce_solana.clock import utc_datetime
-from orcestr_commerce_solana.errors import SolanaRpcResponseError, SolanaRpcUnavailableError
+from orcestr_commerce_solana.errors import (
+    SolanaErrorCode,
+    SolanaRpcResponseError,
+    SolanaRpcUnavailableError,
+)
 from orcestr_commerce_solana.rpc.protocol import SolanaRpc
 from orcestr_commerce_solana.schemas.assets import SettlementSnapshot, SolanaCommitment
 from orcestr_commerce_solana.schemas.intents import SolanaIntentState
@@ -51,6 +55,7 @@ class ReconciliationStats(BaseModel):
     applied: int = Field(ge=0)
     retryable: int = Field(ge=0)
     expired: int = Field(default=0, ge=0)
+    quarantined: int = Field(default=0, ge=0)
 
 
 class ReconciliationCandidate(BaseModel):
@@ -70,6 +75,7 @@ class ReferenceSignatureScan(BaseModel):
 
     candidates: tuple[ReconciliationCandidate, ...]
     complete: bool
+    overflow: bool = False
     reason_code: str | None = None
 
 
@@ -112,6 +118,10 @@ class ReconciliationStore(Protocol):
         """Stops bounded duplicate-payment scans after the immutable horizon."""
         ...
 
+    async def quarantine(self, intent_public_id: UUID, reason_code: str) -> None:
+        """Parks an anomalous reference history without guessing a financial outcome."""
+        ...
+
 
 class SolanaReconciler:
     """Performs a bounded sweep; it does not depend on Taskiq or run a watcher."""
@@ -122,18 +132,26 @@ class SolanaReconciler:
         verifier: SolanaTransactionVerifier,
         store: ReconciliationStore,
         *,
-        signature_page_size: int = 100,
-        max_signature_pages: int = 10,
+        max_candidate_verifications_per_intent: int = 16,
+        max_candidate_verifications_per_pass: int = 32,
     ) -> None:
-        if signature_page_size < 1 or signature_page_size > 1000:
-            raise ValueError("Signature page size must be between 1 and 1000.")
-        if max_signature_pages < 1 or max_signature_pages > 100:
-            raise ValueError("Maximum signature pages must be between 1 and 100.")
+        if (
+            max_candidate_verifications_per_intent < 1
+            or max_candidate_verifications_per_intent > 64
+        ):
+            raise ValueError("Per-intent candidate verification budget must be between 1 and 64.")
+        if (
+            max_candidate_verifications_per_pass < max_candidate_verifications_per_intent
+            or max_candidate_verifications_per_pass > 256
+        ):
+            raise ValueError(
+                "Global candidate verification budget must cover one full intent and be at most 256."
+            )
         self.rpc = rpc
         self.verifier = verifier
         self.store = store
-        self.signature_page_size = signature_page_size
-        self.max_signature_pages = max_signature_pages
+        self.max_candidate_verifications_per_intent = max_candidate_verifications_per_intent
+        self.max_candidate_verifications_per_pass = max_candidate_verifications_per_pass
 
     async def reconcile_pending(self, *, limit: int, now: datetime) -> ReconciliationStats:
         """Checks candidate hints and reference history for each pending intent once."""
@@ -142,7 +160,16 @@ class SolanaReconciler:
         applied_count = 0
         retryable_count = 0
         expired_count = 0
+        quarantined_count = 0
+        remaining_global_budget = self.max_candidate_verifications_per_pass
         for intent in intents:
+            if remaining_global_budget < self.max_candidate_verifications_per_intent:
+                await self.store.mark_retry(
+                    intent.public_id,
+                    SolanaErrorCode.CANDIDATE_VERIFICATION_GLOBAL_BUDGET_EXHAUSTED.value,
+                )
+                retryable_count += 1
+                continue
             scan = await self._signatures(intent)
             candidate_count += len(scan.candidates)
             candidates = scan.candidates
@@ -151,33 +178,65 @@ class SolanaReconciler:
                 SolanaIntentState.CANCELLED,
                 SolanaIntentState.EXPIRED,
             }:
-                # Candidate signatures are unauthenticated acceleration hints. A
-                # terminal audit waits for reference-indexed chain evidence.
-                candidates = tuple(candidate for candidate in candidates if candidate.reference_indexed)
+                candidates = self._unrecorded_reference_candidates(intent, candidates)
             if intent.state == SolanaIntentState.PAID:
-                matches, attempts = await self._verify_paid_candidates(intent, candidates, now)
+                bounded, verification_complete = self._bounded_candidates(candidates)
+                matches, attempts, provisional, prepared_count = await self._verify_paid_candidates(
+                    intent,
+                    bounded,
+                    now,
+                )
+                remaining_global_budget -= prepared_count
                 for attempt in attempts:
                     await self.store.record_attempt(intent.public_id, attempt)
                 for match in matches:
                     if await self.store.record_duplicate_payment(intent.public_id, match):
                         applied_count += 1
+                if self._is_unknown(provisional):
+                    await self.store.mark_retry(intent.public_id, provisional.reason_code)
+                    retryable_count += 1
+                    continue
+                if scan.overflow or not verification_complete:
+                    await self.store.quarantine(
+                        intent.public_id,
+                        SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+                    )
+                    quarantined_count += 1
+                    continue
                 if scan.complete and intent.reconcile_until <= now:
                     await self.store.finish_paid_audit(intent.public_id)
                     continue
-                await self.store.mark_retry(intent.public_id, scan.reason_code)
+                await self.store.mark_retry(
+                    intent.public_id,
+                    (provisional.reason_code if provisional is not None else None)
+                    or scan.reason_code,
+                )
                 retryable_count += 1
                 continue
             if intent.state in {SolanaIntentState.CANCELLED, SolanaIntentState.EXPIRED}:
-                evidences, attempts, provisional = await self._verify_terminal_candidates(
+                bounded, verification_complete = self._bounded_candidates(candidates)
+                evidences, attempts, provisional, prepared_count = await self._verify_terminal_candidates(
                     intent,
-                    candidates,
+                    bounded,
                     now,
                 )
+                remaining_global_budget -= prepared_count
                 for attempt in attempts:
                     await self.store.record_attempt(intent.public_id, attempt)
                 for evidence in evidences:
                     if await self.store.apply_terminal_evidence(intent.public_id, evidence):
                         applied_count += 1
+                if self._is_unknown(provisional):
+                    await self.store.mark_retry(intent.public_id, provisional.reason_code)
+                    retryable_count += 1
+                    continue
+                if scan.overflow or not verification_complete:
+                    await self.store.quarantine(
+                        intent.public_id,
+                        SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+                    )
+                    quarantined_count += 1
+                    continue
                 if scan.complete and intent.reconcile_until <= now:
                     await self.store.finish_terminal(intent.public_id)
                     continue
@@ -195,14 +254,17 @@ class SolanaReconciler:
                 # window. Reference-indexed finalized evidence can therefore
                 # settle before expiry is persisted. Exact confirmed evidence
                 # remains pending only through the immutable grace horizon.
-                terminal_candidates = tuple(
-                    candidate for candidate in candidates if candidate.reference_indexed
-                )
-                evidences, attempts, provisional = await self._verify_terminal_candidates(
+                terminal_candidates = self._unrecorded_reference_candidates(
                     intent,
-                    terminal_candidates,
+                    candidates,
+                )
+                bounded, verification_complete = self._bounded_candidates(terminal_candidates)
+                evidences, attempts, provisional, prepared_count = await self._verify_terminal_candidates(
+                    intent,
+                    bounded,
                     now,
                 )
+                remaining_global_budget -= prepared_count
                 matches = tuple(
                     evidence
                     for evidence in evidences
@@ -225,6 +287,12 @@ class SolanaReconciler:
                         ):
                             applied_count += 1
                     continue
+                if self._is_unknown(provisional):
+                    for attempt in attempts:
+                        await self.store.record_attempt(intent.public_id, attempt)
+                    await self.store.mark_retry(intent.public_id, provisional.reason_code)
+                    retryable_count += 1
+                    continue
                 if (
                     provisional is not None
                     and provisional.disposition == VerificationDisposition.CONFIRMED
@@ -233,9 +301,25 @@ class SolanaReconciler:
                     for attempt in (*attempts, *policy_reviews):
                         await self.store.record_attempt(intent.public_id, attempt)
                     await self.store.apply(intent.public_id, provisional)
-                    await self.store.mark_retry(intent.public_id, provisional.reason_code)
                     applied_count += 1
-                    retryable_count += 1
+                    if scan.overflow or not verification_complete:
+                        await self.store.quarantine(
+                            intent.public_id,
+                            SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+                        )
+                        quarantined_count += 1
+                    else:
+                        await self.store.mark_retry(intent.public_id, provisional.reason_code)
+                        retryable_count += 1
+                    continue
+                if scan.overflow or not verification_complete:
+                    for attempt in attempts:
+                        await self.store.record_attempt(intent.public_id, attempt)
+                    await self.store.quarantine(
+                        intent.public_id,
+                        SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+                    )
+                    quarantined_count += 1
                     continue
                 if not scan.complete:
                     for attempt in attempts:
@@ -258,35 +342,91 @@ class SolanaReconciler:
                     await self.store.finish_terminal(intent.public_id)
                 continue
 
-            result, attempts = await self._verify_candidates(intent, candidates, now)
+            bounded, verification_complete = self._bounded_candidates(candidates)
+            result, attempts, prepared_count = await self._verify_candidates(
+                intent,
+                bounded,
+                now,
+            )
+            remaining_global_budget -= prepared_count
             for attempt in attempts:
                 await self.store.record_attempt(intent.public_id, attempt)
-            if result is None:
-                await self.store.mark_retry(intent.public_id, scan.reason_code)
-                retryable_count += 1
-                continue
-            if result.disposition == VerificationDisposition.UNKNOWN:
+            if self._is_unknown(result):
                 await self.store.mark_retry(intent.public_id, result.reason_code)
                 retryable_count += 1
                 continue
-            if result.disposition in {VerificationDisposition.OBSERVED, VerificationDisposition.CONFIRMED}:
+            if result is not None and result.disposition in {
+                VerificationDisposition.OBSERVED,
+                VerificationDisposition.CONFIRMED,
+            }:
                 await self.store.apply(intent.public_id, result)
-                await self.store.mark_retry(intent.public_id, result.reason_code)
                 applied_count += 1
-                retryable_count += 1
+                if scan.overflow or not verification_complete:
+                    await self.store.quarantine(
+                        intent.public_id,
+                        SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+                    )
+                    quarantined_count += 1
+                else:
+                    await self.store.mark_retry(intent.public_id, result.reason_code)
+                    retryable_count += 1
                 continue
-            await self.store.apply(intent.public_id, result)
-            applied_count += 1
+            if result is not None:
+                await self.store.apply(intent.public_id, result)
+                applied_count += 1
+                continue
+            if scan.overflow or not verification_complete:
+                await self.store.quarantine(
+                    intent.public_id,
+                    SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
+                )
+                quarantined_count += 1
+                continue
+            await self.store.mark_retry(intent.public_id, scan.reason_code)
+            retryable_count += 1
         return ReconciliationStats(
             intents=len(intents),
             candidates=candidate_count,
             applied=applied_count,
             retryable=retryable_count,
             expired=expired_count,
+            quarantined=quarantined_count,
+        )
+
+    def _bounded_candidates(
+        self,
+        candidates: tuple[ReconciliationCandidate, ...],
+    ) -> tuple[tuple[ReconciliationCandidate, ...], bool]:
+        """Returns at most one per-intent prepare budget and an exact completeness flag."""
+
+        limit = self.max_candidate_verifications_per_intent
+        return candidates[:limit], len(candidates) <= limit
+
+    @staticmethod
+    def _unrecorded_reference_candidates(
+        intent: ReconciliationIntent,
+        candidates: tuple[ReconciliationCandidate, ...],
+    ) -> tuple[ReconciliationCandidate, ...]:
+        """Excludes client-only hints and already persisted transfer signatures for audits."""
+
+        recorded = set(intent.recorded_signatures)
+        if intent.verified_signature is not None:
+            recorded.add(intent.verified_signature)
+        return tuple(
+            candidate
+            for candidate in candidates
+            if candidate.reference_indexed and candidate.signature not in recorded
+        )
+
+    @staticmethod
+    def _is_unknown(result: VerificationResult | None) -> bool:
+        return (
+            result is not None
+            and result.disposition == VerificationDisposition.UNKNOWN
         )
 
     async def _signatures(self, intent: ReconciliationIntent) -> ReferenceSignatureScan:
-        """Paginates reference history until the oldest issuance-time lower bound."""
+        """Reads one budget-plus-one window; untrusted history is never paginated."""
         candidates: dict[str, ReconciliationCandidate] = {
             signature: ReconciliationCandidate(
                 signature=signature,
@@ -298,43 +438,37 @@ class SolanaReconciler:
         if not intent.issuances:
             return ReferenceSignatureScan(candidates=tuple(candidates.values()), complete=True)
         lower_slot = min(issuance.issued_context_slot for issuance in intent.issuances)
-        before: str | None = None
+        scan_limit = self.max_candidate_verifications_per_intent + 1
         try:
-            for _ in range(self.max_signature_pages):
-                history = await self.rpc.get_signatures_for_address(
-                    intent.settlement.reference,
-                    before=before,
-                    limit=self.signature_page_size,
-                    commitment=SolanaCommitment.CONFIRMED,
-                )
-                if not history:
-                    return ReferenceSignatureScan(candidates=tuple(candidates.values()), complete=True)
-                reached_lower_bound = False
-                for item in history:
-                    if item.slot < lower_slot:
-                        reached_lower_bound = True
-                        break
-                    candidates[item.signature] = ReconciliationCandidate(
-                        signature=item.signature,
-                        detection_source="reference_scan",
-                        reference_indexed=True,
-                    )
-                if reached_lower_bound or len(history) < self.signature_page_size:
-                    return ReferenceSignatureScan(candidates=tuple(candidates.values()), complete=True)
-                next_before = history[-1].signature
-                if next_before == before:
-                    break
-                before = next_before
+            history = await self.rpc.get_signatures_for_address(
+                intent.settlement.reference,
+                before=None,
+                limit=scan_limit,
+                commitment=SolanaCommitment.CONFIRMED,
+            )
         except (SolanaRpcUnavailableError, SolanaRpcResponseError) as exc:
             return ReferenceSignatureScan(
                 candidates=tuple(candidates.values()),
                 complete=False,
                 reason_code=exc.code.value,
             )
+        reached_lower_bound = False
+        for item in history:
+            if item.slot < lower_slot:
+                reached_lower_bound = True
+                break
+            candidates[item.signature] = ReconciliationCandidate(
+                signature=item.signature,
+                detection_source="reference_scan",
+                reference_indexed=True,
+            )
+        if reached_lower_bound or len(history) < scan_limit:
+            return ReferenceSignatureScan(candidates=tuple(candidates.values()), complete=True)
         return ReferenceSignatureScan(
             candidates=tuple(candidates.values()),
             complete=False,
-            reason_code="reference_scan_limit_reached",
+            overflow=True,
+            reason_code=SolanaErrorCode.REFERENCE_CANDIDATE_BUDGET_EXCEEDED.value,
         )
 
     async def _verify_candidates(
@@ -342,16 +476,18 @@ class SolanaReconciler:
         intent: ReconciliationIntent,
         signatures: tuple[ReconciliationCandidate, ...],
         now: datetime,
-    ) -> tuple[VerificationResult | None, tuple[VerificationResult, ...]]:
+    ) -> tuple[VerificationResult | None, tuple[VerificationResult, ...], int]:
         """Searches all hints and prefers valid evidence over unrelated transactions."""
         if not intent.issuances:
-            return None, ()
+            return None, (), 0
         confirmed: VerificationResult | None = None
         observed: VerificationResult | None = None
         unknown: VerificationResult | None = None
         attempts: list[VerificationResult] = []
+        prepared_count = 0
         for candidate in signatures:
             prepared = await self.verifier.prepare(candidate.signature)
+            prepared_count += 1
             for issuance in intent.issuances:
                 result = await self.verifier.verify(
                     VerificationRequest(
@@ -365,7 +501,7 @@ class SolanaReconciler:
                     prepared=prepared,
                 )
                 if result.disposition == VerificationDisposition.MATCH:
-                    return result, tuple(attempts)
+                    return result, tuple(attempts), prepared_count
                 if result.disposition == VerificationDisposition.CONFIRMED:
                     confirmed = confirmed or result
                     break
@@ -375,8 +511,6 @@ class SolanaReconciler:
                     observed = observed or result
                     break
                 if result.disposition == VerificationDisposition.UNKNOWN:
-                    if not candidate.reference_indexed:
-                        break
                     unknown = unknown or result
                     break
                 if result.reason_code == "issuance_mismatch":
@@ -387,23 +521,31 @@ class SolanaReconciler:
                 if result.transfer is not None or result.attempt is not None:
                     attempts.append(result)
                 break
-        return confirmed or observed or unknown, tuple(attempts)
+        return unknown or confirmed or observed, tuple(attempts), prepared_count
 
     async def _verify_paid_candidates(
         self,
         intent: ReconciliationIntent,
         signatures: tuple[ReconciliationCandidate, ...],
         now: datetime,
-    ) -> tuple[tuple[VerificationResult, ...], tuple[VerificationResult, ...]]:
+    ) -> tuple[
+        tuple[VerificationResult, ...],
+        tuple[VerificationResult, ...],
+        VerificationResult | None,
+        int,
+    ]:
         """Collects every additional exact finalized payment in one bounded pass."""
         if not intent.issuances:
-            return (), ()
+            return (), (), None, 0
         matches: list[VerificationResult] = []
         attempts: list[VerificationResult] = []
+        provisional: VerificationResult | None = None
+        prepared_count = 0
         for candidate in signatures:
             if candidate.signature == intent.verified_signature:
                 continue
             prepared = await self.verifier.prepare(candidate.signature)
+            prepared_count += 1
             for issuance in intent.issuances:
                 result = await self.verifier.verify(
                     VerificationRequest(
@@ -425,8 +567,14 @@ class SolanaReconciler:
                     and (result.transfer is not None or result.attempt is not None)
                 ):
                     attempts.append(result)
+                elif result.disposition in {
+                    VerificationDisposition.UNKNOWN,
+                    VerificationDisposition.OBSERVED,
+                    VerificationDisposition.CONFIRMED,
+                }:
+                    provisional = self._preferred_provisional(provisional, result)
                 break
-        return tuple(matches), tuple(attempts)
+        return tuple(matches), tuple(attempts), provisional, prepared_count
 
     async def _verify_terminal_candidates(
         self,
@@ -437,20 +585,23 @@ class SolanaReconciler:
         tuple[VerificationResult, ...],
         tuple[VerificationResult, ...],
         VerificationResult | None,
+        int,
     ]:
         """Collects every new finalized terminal transfer in one bounded pass."""
         if not intent.issuances:
-            return (), (), None
+            return (), (), None, 0
         recorded = set(intent.recorded_signatures)
         if intent.verified_signature is not None:
             recorded.add(intent.verified_signature)
         evidences: list[VerificationResult] = []
         attempts: list[VerificationResult] = []
         provisional: VerificationResult | None = None
+        prepared_count = 0
         for candidate in signatures:
             if not candidate.reference_indexed or candidate.signature in recorded:
                 continue
             prepared = await self.verifier.prepare(candidate.signature)
+            prepared_count += 1
             for issuance in intent.issuances:
                 result = await self.verifier.verify(
                     VerificationRequest(
@@ -477,13 +628,9 @@ class SolanaReconciler:
                     VerificationDisposition.OBSERVED,
                     VerificationDisposition.CONFIRMED,
                 }:
-                    if (
-                        provisional is None
-                        or result.disposition == VerificationDisposition.CONFIRMED
-                    ):
-                        provisional = result
+                    provisional = self._preferred_provisional(provisional, result)
                 break
-        return tuple(evidences), tuple(attempts), provisional
+        return tuple(evidences), tuple(attempts), provisional, prepared_count
 
     @staticmethod
     def _is_terminal_evidence(result: VerificationResult) -> bool:
@@ -496,3 +643,19 @@ class SolanaReconciler:
             and result.transfer is not None
             and result.transfer.commitment == SolanaCommitment.FINALIZED
         )
+
+    @staticmethod
+    def _preferred_provisional(
+        current: VerificationResult | None,
+        candidate: VerificationResult,
+    ) -> VerificationResult:
+        """Keeps UNKNOWN dominant so uncertainty cannot complete a lifecycle audit."""
+
+        if current is None:
+            return candidate
+        rank = {
+            VerificationDisposition.OBSERVED: 1,
+            VerificationDisposition.CONFIRMED: 2,
+            VerificationDisposition.UNKNOWN: 3,
+        }
+        return candidate if rank[candidate.disposition] > rank[current.disposition] else current
