@@ -43,9 +43,20 @@ The default host wiring is intentionally small:
 - `SolanaApplicationService.build_default(...)` supplies authenticated checkout orchestration.
 - `SolanaFastApiRouterFactory` supplies typed routes; the host injects Orcestr Auth actor, ownership, and CSRF dependencies.
 - `create_sqlalchemy_reconciler(...)` supplies leased background reconciliation, DB-backed signature uniqueness, paginated reference scans, and safe expiry.
-- `SolanaProviderRegistrationFactory` registers the provider explicitly in CommerceXL 0.3.1 or newer. Version 0.3.1 is the minimum because its state machine permits a provisional confirmed payment to expire after a complete final reference scan.
+- `SolanaProviderRegistrationFactory` registers the provider explicitly in CommerceXL 0.3.2 or newer. Version 0.3.2 is the minimum because payment options carry the immutable order amount/currency snapshot and its state machine permits a provisional confirmed payment to expire after a complete final reference scan.
 
-`SolanaProviderDependencies` requires a host `SettlementPriceKeyResolver`. It must resolve a stable product/plan/pack code from the order; broad order kinds are intentionally not used as a pricing fallback. Fixed prices are keyed by `(resolved_price_key, asset_option_id)`, so Beauty packs of the same order kind can have different token amounts. A custom `SettlementQuoteProvider` may replace fixed prices while preserving the immutable quote snapshot. A custom `RecipientResolver` supports either a Beauty treasury or host-verified P2P recipients without changing the verifier.
+`SolanaProviderDependencies` requires a host `SettlementPriceKeyResolver`. It must resolve a stable product/plan/pack code from the order; broad order kinds are intentionally not used as a pricing fallback. For products priced in the database in the same currency as the selected asset, use the recommended exact strategy:
+
+```python
+from orcestr_commerce_solana import OrderSnapshotSettlementQuoteProvider
+
+quotes = OrderSnapshotSettlementQuoteProvider(
+    {"solana_orcestr": "ORCESTR"},
+    version="catalog-v1",
+)
+```
+
+The provider requires `order.currency == configured currency` for the exact validated asset option, converts the human decimal order amount with `SolanaAmountCodec`, rejects fractional precision instead of rounding, and validates positive u64 plus asset min/max bounds. Asset identity remains the validated option/mint; the display symbol is never a security input. Its immutable quote uses `source="order_snapshot"` and `rounding="exact"`. `FixedSettlementQuoteProvider` remains a separate strategy for intentionally precomputed raw prices keyed by `(resolved_price_key, asset_option_id)`; it is not the recommended catalogue-pricing path. A custom `RecipientResolver` supports either a Beauty treasury or host-verified P2P recipients without changing the verifier.
 
 Transaction issuance is bounded by `max_issuances_per_intent` (default 16) under the intent row lock. `expires_at` is the public payment deadline; a successful complete scan expires the payment at that deadline. An immutable `reconcile_until` grace horizon keeps cancelled/expired attempts discoverable only for late finalized evidence. Every distinct late transfer is written to CommerceXL with the same terminal state and never grants the product.
 

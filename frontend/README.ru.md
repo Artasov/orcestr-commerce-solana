@@ -2,7 +2,7 @@
 
 TypeScript workspace с переиспользуемыми контрактами Solana-платежей, интеграцией React Query и Wallet Standard, а также доступными checkout-компонентами на Orcestr UI.
 
-Пакеты принимают нативный SOL и явно разрешённые Token-2022 активы через transaction request, выпущенный backend-ом. В v0.1 нет пути для static transfer и legacy token. Пакеты не хранят private key, не создают отдельный auth-клиент, не открывают свой WebSocket и не опрашивают статус по таймеру.
+Пакеты принимают нативный SOL и явно разрешённые Token-2022 активы через transaction request, выпущенный backend-ом. В текущем релизе нет пути для static transfer и legacy token. Пакеты не хранят private key, не создают отдельный auth-клиент, не открывают свой WebSocket и не опрашивают статус по таймеру.
 
 ## Пакеты
 
@@ -34,7 +34,7 @@ npm run pack:dry-run
 }
 ```
 
-Все три пути нужны, чтобы exact internal dependencies `0.1.0` тоже оставались локальными. До коммита релизного consumer верните registry-версии.
+Все три пути нужны, чтобы exact internal dependencies `0.2.0` тоже оставались локальными. До коммита релизного consumer верните registry-версии.
 
 Все пакеты публикуются только как ESM, содержат TypeScript declarations и собственные `LICENSE`, `NOTICE`, `TRADEMARKS.md`, а также README на русском и английском внутри npm tarball.
 

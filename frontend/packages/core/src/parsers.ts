@@ -49,7 +49,7 @@ const STATUSES = [
   "review",
 ] as const;
 const COMMITMENTS = ["finalized"] as const;
-const ROUNDING_MODES = ["down", "half_up", "up"] as const;
+const ROUNDING_MODES = ["exact", "down", "half_up", "up"] as const;
 const MAX_U64 = 18_446_744_073_709_551_615n;
 const RECIPIENT_POLICY_VERSION_PATTERN =
   /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}$/u;

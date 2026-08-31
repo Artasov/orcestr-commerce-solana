@@ -36,7 +36,7 @@ const payment = await client.createCommercePaymentAttempt({
 const intent = await client.getPaymentIntent(payment.id);
 ```
 
-This is the stable CommerceXL 0.3.1 flow: order → provider-neutral payment options → payment attempt. `CommercePayment` is the canonical order-card status; the Solana intent adds the immutable settlement snapshot needed by checkout. Reopen a payment with `issueCommerceCheckoutAction(payment.id)` or `issuePaymentIntentAction(payment.id)`; both issue a fresh short-lived capability without replacing the payment/reference.
+This is the stable CommerceXL 0.3.2 flow: order → provider-neutral payment options → payment attempt. Every option contains the mandatory exact order `amount` and normalized `currency`, so checkout can display the server-owned snapshot without reading a mutable product row or trusting client pricing. `CommercePayment` is the canonical order-card status; the Solana intent adds the immutable settlement snapshot needed by checkout. Reopen a payment with `issueCommerceCheckoutAction(payment.id)` or `issuePaymentIntentAction(payment.id)`; both issue a fresh short-lived capability without replacing the payment/reference.
 
 For Orcestr Auth, `authFetch` must retain the host's cookie/OAuth, refresh, CSRF, and typed API error behavior. Capability-bearing responses are marked with `responseSensitivity: "capability"` for custom executors. The built-in executor redacts their HTTP error body, and parser errors never retain raw rejected values. Custom executors must likewise avoid logging or persisting capability bodies and URLs.
 
@@ -81,13 +81,15 @@ Keep the canonical URI only in memory. It contains a short-lived capability and 
 
 Commercial decimal amounts and blockchain base units remain strings. `parseDecimalAmount`, `parseRawAmount`, `decimalAmountToRaw`, and `rawAmountToDecimal` never round through JavaScript `Number`.
 
+Quote snapshots require an explicit rounding mode. `exact` means the backend converted a database order amount directly to asset raw units and rejected unsupported fractional precision; a missing rounding field is never interpreted as a legacy default.
+
 Runtime parsers bind the cluster to its exact genesis hash, decode addresses/signatures to 32/64 bytes, enforce positive u64 raw amounts and option bounds, and require `display_amount == expected_raw_amount / 10^decimals`. Every immutable settlement also carries a required canonical `recipient_policy_version` snapshot for resolver provenance; it is audit metadata and is not substituted for the exact recipient address during verification.
 
 `validateInspectedTransaction` accepts only one exact top-level native transfer or Token-2022 `TransferChecked`, with the expected payer, canonical payer Token-2022 associated token account, mint, destination token account, raw amount, decimals, reference, required signed `orcestr-issuance:<uuid4>` memo, and exact optional settlement memo. The built-in inspector also requires the issuance memo first, the optional settlement memo second, and the payment instruction last. It is a client-side safety check; authoritative payment verification remains on the backend after the required Solana commitment.
 
 ## Build
 
-For local integration, build the source workspace first, use the exact consumer dependency `file:../../orcestr-commerce-solana/frontend/packages/core`, and run the consumer's `npm install` before its dev server. Do not use a global `npm link`; restore version `0.1.0` from the registry before a release commit.
+For local integration, build the source workspace first, use the exact consumer dependency `file:../../orcestr-commerce-solana/frontend/packages/core`, and run the consumer's `npm install` before its dev server. Do not use a global `npm link`; restore version `0.2.0` from the registry before a release commit.
 
 From the repository `frontend` directory:
 

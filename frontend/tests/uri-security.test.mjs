@@ -45,7 +45,7 @@ test("allows only loopback HTTP for local transaction-request development", () =
   );
 });
 
-test("rejects static transfer requests in v0.1", () => {
+test("rejects unsupported static transfer requests", () => {
   assert.throws(
     () => parseSolanaPayUri(`solana:${RECIPIENT}?amount=1.5`),
     /Invalid canonical/u,

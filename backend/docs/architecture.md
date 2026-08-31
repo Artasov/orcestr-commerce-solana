@@ -16,7 +16,7 @@ The browser never chooses a mint, recipient, decimals, raw amount, cluster, or c
 
 Once exact chain evidence reaches `observed` or `confirmed`, all outstanding capabilities are revoked and no new action or issuance is allowed. A client-submitted processed signature alone does not change the intent from `waiting`.
 
-There is no static `solana:` transfer-request fallback in v0.1. Every supported payment is an issued `solana_transaction_request`.
+There is no static `solana:` transfer-request fallback in the current release. Every supported payment is an issued `solana_transaction_request`.
 
 ## Verification
 

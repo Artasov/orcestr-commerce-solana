@@ -5,6 +5,12 @@ Beauty tariff and the ORCESTR payment option. The server creates a CommerceXL or
 catalogue price, then creates a Solana payment attempt; the client never posts amount, currency,
 mint or recipient.
 
+Each Beauty product keeps independent RUB, USD and ORCESTR price rows in the CommerceXL catalogue.
+The selected currency is copied into the immutable order, so later admin edits affect only new
+orders. The ORCESTR option uses `OrderSnapshotSettlementQuoteProvider` with the exact
+`solana_orcestr -> ORCESTR` allowlist. It converts the frozen human ORCESTR decimal to six-decimal
+raw units with `rounding="exact"`; no ORCESTR product price is read from environment variables.
+
 The host wires Orcestr Auth actor, tenant ownership and CSRF dependencies into the add-on
 FastAPI adapter. Commerce and Solana rows use the control database. A platform route is used so
 Beauty-only tenants are not incorrectly gated by the Deliveries module.

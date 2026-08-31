@@ -67,7 +67,7 @@ QR создаётся локально библиотекой `qrcode` как im
 
 ## Сборка
 
-Для локальной интеграции сначала соберите source workspace, затем укажите в consumer-е `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react` и `file:../../orcestr-commerce-solana/frontend/packages/ui`. Выполните `npm install` consumer-а до запуска dev server; глобальный `npm link` не используйте. Перед релизным коммитом верните registry-версии `0.1.0`.
+Для локальной интеграции сначала соберите source workspace, затем укажите в consumer-е `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react` и `file:../../orcestr-commerce-solana/frontend/packages/ui`. Выполните `npm install` consumer-а до запуска dev server; глобальный `npm link` не используйте. Перед релизным коммитом верните registry-версии `0.2.0`.
 
 ```bash
 npm run typecheck

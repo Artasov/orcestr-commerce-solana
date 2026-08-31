@@ -41,9 +41,20 @@ verifier = SolanaTransactionVerifier(rpc, used_signatures=my_database_signature_
 - `SolanaApplicationService.build_default(...)` реализует authenticated checkout flow.
 - `SolanaFastApiRouterFactory` даёт typed routes; host внедряет Orcestr Auth actor, ownership и CSRF dependencies.
 - `create_sqlalchemy_reconciler(...)` даёт lease для конкурентных workers, DB-проверку уникальности signature, пагинацию reference history и безопасное истечение intent.
-- `SolanaProviderRegistrationFactory` явно регистрирует provider в CommerceXL 0.3.1 или новее. Версия 0.3.1 — обязательный минимум: её state machine разрешает истечение предварительно подтверждённого платежа после полного финального scan по reference.
+- `SolanaProviderRegistrationFactory` явно регистрирует provider в CommerceXL 0.3.2 или новее. Версия 0.3.2 обязательна: payment option содержит неизменяемый snapshot суммы и валюты заказа, а state machine разрешает истечение предварительно подтверждённого платежа после полного финального scan по reference.
 
-`SolanaProviderDependencies` требует host-реализацию `SettlementPriceKeyResolver`. Она должна вернуть стабильный код конкретного продукта, плана или pack; широкий `order.kind` намеренно не используется как fallback. Фиксированные цены задаются ключом `(resolved_price_key, asset_option_id)`, поэтому Beauty packs одного order kind могут иметь разные token amounts. Для динамического курса можно внедрить собственный `SettlementQuoteProvider`; immutable quote snapshot всё равно сохранится. `RecipientResolver` одинаково поддерживает treasury Beauty и P2P-получателя, уже проверенного host-приложением.
+`SolanaProviderDependencies` требует host-реализацию `SettlementPriceKeyResolver`. Она должна вернуть стабильный код конкретного продукта, плана или pack; широкий `order.kind` намеренно не используется как fallback. Для продуктов с ценой в базе в той же валюте, что и выбранный asset, рекомендуется exact-стратегия:
+
+```python
+from orcestr_commerce_solana import OrderSnapshotSettlementQuoteProvider
+
+quotes = OrderSnapshotSettlementQuoteProvider(
+    {"solana_orcestr": "ORCESTR"},
+    version="catalog-v1",
+)
+```
+
+Provider требует `order.currency == configured currency` для конкретного validated asset option, преобразует human decimal заказа через `SolanaAmountCodec`, отклоняет лишнюю дробную точность без округления и проверяет positive u64 и asset min/max. Identity задаётся validated option/mint; display symbol никогда не участвует в security-проверке. В immutable quote фиксируются `source="order_snapshot"` и `rounding="exact"`. `FixedSettlementQuoteProvider` остаётся отдельной стратегией для заранее рассчитанных raw-цен с ключом `(resolved_price_key, asset_option_id)`, но не является рекомендуемым путём для каталожных цен. `RecipientResolver` одинаково поддерживает treasury Beauty и P2P-получателя, уже проверенного host-приложением.
 
 Число transaction issuance ограничено `max_issuances_per_intent` (по умолчанию 16) под row lock intent. `expires_at` — публичный дедлайн оплаты: после успешного полного scan платёж истекает именно в этот момент. Неизменяемый горизонт `reconcile_until` оставляет cancelled/expired intent только для обнаружения позднего finalized evidence. Каждый отдельный поздний перевод записывается в CommerceXL с тем же terminal state и никогда не выдаёт продукт.
 

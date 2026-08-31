@@ -1,6 +1,6 @@
 # Security contract
 
-## Supported in v0.1
+## Supported scope
 
 - native SOL through the System Program;
 - Token-2022 mints activated against exact cluster genesis, owner, decimals, authorities, account hash, and an allowlisted extension policy;
@@ -15,7 +15,7 @@ The verifier rejects CPI/inner instructions, swaps, unknown programs, batch or m
 
 Raw `getTransaction` bytes must be non-empty and at most the 1232-byte Solana wire packet limit. The HTTP adapter bounds base64 length before decoding and the normalized RPC model repeats the byte bound before solders parsing.
 
-Transfer-fee mints and recipient accounts that require MemoTransfer are rejected in v0.1. Unknown or dangerous Token-2022 extensions are not activated merely because a client requests the mint. Display symbol/name are non-authoritative snapshot fields; identity is cluster genesis plus mint/program.
+Transfer-fee mints and recipient accounts that require MemoTransfer are rejected in the current release. Unknown or dangerous Token-2022 extensions are not activated merely because a client requests the mint. Display symbol/name are non-authoritative snapshot fields; identity is cluster genesis plus mint/program.
 
 The immutable settlement also records `recipient_policy_version` from the host resolver. This is audit provenance for treasury or P2P selection; verification continues to use the exact snapshotted recipient address rather than trusting the version label.
 

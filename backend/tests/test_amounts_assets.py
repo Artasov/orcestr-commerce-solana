@@ -29,6 +29,15 @@ class TestSolanaAmountCodec:
         assert SolanaAmountCodec.format(raw, 6) == "806981765.769894"
         assert SolanaAmountCodec.format(1_000_000, 6) == "1"
 
+    def test_ignores_only_trailing_zeroes_beyond_asset_precision(self) -> None:
+        assert SolanaAmountCodec.parse("1.000000", 2) == 100
+        assert SolanaAmountCodec.parse("1.230000", 2) == 123
+
+        with pytest.raises(SolanaCommerceError) as error:
+            SolanaAmountCodec.parse("1.230001", 2)
+
+        assert error.value.code == SolanaErrorCode.INVALID_AMOUNT
+
     @pytest.mark.parametrize("value", ["1e3", "-1", "+1", "01", "1.0000001", " 1"])
     def test_rejects_noncanonical_display_amounts(self, value: str) -> None:
         with pytest.raises(SolanaCommerceError) as error:

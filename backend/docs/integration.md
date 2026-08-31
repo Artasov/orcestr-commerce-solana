@@ -2,7 +2,7 @@
 
 ## Database and CommerceXL
 
-Use CommerceXL 0.3.1 or newer and import `orcestr_commerce_solana.models` before the host collects `CommerceBase.metadata`. Version 0.3.1 is the minimum supported baseline because `CONFIRMED -> EXPIRED` is required after a complete final reference scan. The addon deliberately ships no migrations: the host creates reviewed Alembic migrations for its own database topology.
+Use CommerceXL 0.3.2 or newer and import `orcestr_commerce_solana.models` before the host collects `CommerceBase.metadata`. Version 0.3.2 is the minimum supported baseline because payment options must carry the order amount/currency snapshot and `CONFIRMED -> EXPIRED` is required after a complete final reference scan. The addon deliberately ships no migrations: the host creates reviewed Alembic migrations for its own database topology.
 
 Create and explicitly register `SolanaProviderRegistrationFactory.create(dependencies)`. Asset options must come from validated `ValidatedSolanaAsset` objects. An active Token-2022 asset cannot be constructed without its on-chain account-data hash.
 
@@ -10,7 +10,11 @@ Create and explicitly register `SolanaProviderRegistrationFactory.create(depende
 
 Every `RecipientSnapshot` must carry a stable canonical `policy_version` (1-100 ASCII characters from the documented code alphabet). It is copied to required `settlement.recipient_policy_version` in the immutable ORM JSON/API snapshot for treasury/P2P audit; it is provenance, not an on-chain identity field.
 
-Every provider registration must inject `SettlementPriceKeyResolver.resolve(session, order, actor) -> str | None`. The host should return a stable plan, addon, or AI credit-pack code. Returning `None` hides Solana options for that order and rejects creation. There is deliberately no `order.kind` fallback because multiple commercial products can share one kind. `FixedSettlementQuoteProvider` accepts `{(resolved_price_key, option_id): raw_amount}`.
+Every provider registration must inject `SettlementPriceKeyResolver.resolve(session, order, actor) -> str | None`. The host should return a stable plan, addon, or AI credit-pack code. Returning `None` hides Solana options for that order and rejects creation. There is deliberately no `order.kind` fallback because multiple commercial products can share one kind.
+
+Use `OrderSnapshotSettlementQuoteProvider({option_id: commerce_currency}, version=...)` for normal database-priced orders. For ORCESTR, the mapping is `{"solana_orcestr": "ORCESTR"}` and the CommerceXL product must have a separate active `ORCESTR` price row. CommerceXL copies that price into the immutable order and publishes the same exact decimal amount and normalized currency on every `PaymentOptionDTO`. The provider accepts only the exact currency configured for the validated asset option, converts the order decimal using the asset decimals, and records explicit `rounding="exact"`; it never reads a current catalogue row after order creation and never rounds or uses float arithmetic. Asset identity comes from option id plus the validated mint policy, never from its display symbol.
+
+`FixedSettlementQuoteProvider` remains available for deliberately precomputed raw settlement amounts and accepts `{(resolved_price_key, option_id): raw_amount}`. Do not use it to mirror editable catalogue prices in environment variables.
 
 ## Default services
 
@@ -32,7 +36,7 @@ Mount the router returned by `SolanaFastApiRouterFactory.create(...)`. The defau
 
 Solana cancellation must enter through `SolanaApplicationService.cancel_intent()` (the package `/cancel` route). It locks and records the Solana cancellation command before invoking CommerceXL, preserving the global Solana-intent then Commerce order/payment lock order used by reconciliation. Calling generic `PaymentRuntime.cancel_for_order()` directly for a Solana payment is intentionally rejected by the provider before it mutates the Solana row; this fail-fast guard prevents the inverse lock order and a database deadlock.
 
-JSON is snake_case. Raw amounts and rates are decimal strings. `action` is nullable after it is no longer actionable; its only v0.1 kind is `solana_transaction_request`.
+JSON is snake_case. Raw amounts and rates are decimal strings. `action` is nullable after it is no longer actionable; its only currently supported kind is `solana_transaction_request`.
 
 The Solana Pay POST requires a canonical payer `account` and ignores unknown request fields as required for forward-compatible protocol extensions. The optional GET `icon` must be an absolute credential-free HTTP(S) image URL controlled by the merchant.
 

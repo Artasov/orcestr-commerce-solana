@@ -67,7 +67,7 @@ Global providers can import `SolanaCommerceI18nProvider` from `@orcestr/commerce
 
 ## Build
 
-For local integration, build the source workspace first and point the consumer to `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react`, and `file:../../orcestr-commerce-solana/frontend/packages/ui`. Run the consumer's `npm install` before its dev server; do not use a global `npm link`. Restore `0.1.0` registry versions before a release commit.
+For local integration, build the source workspace first and point the consumer to `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react`, and `file:../../orcestr-commerce-solana/frontend/packages/ui`. Run the consumer's `npm install` before its dev server; do not use a global `npm link`. Restore `0.2.0` registry versions before a release commit.
 
 ```bash
 npm run typecheck

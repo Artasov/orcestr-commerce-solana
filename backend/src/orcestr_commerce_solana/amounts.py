@@ -18,7 +18,10 @@ class SolanaAmountCodec:
         match = cls.pattern.fullmatch(value)
         if match is None:
             raise SolanaCommerceError(SolanaErrorCode.INVALID_AMOUNT, "Amount must be a plain non-negative decimal string.")
-        fraction = match.group(2) or ""
+        # Database numerics commonly preserve their declared scale.  Trailing
+        # zeroes do not add precision and must not make an otherwise exact
+        # token amount unpayable (for example ``1.000000`` at 2 decimals).
+        fraction = (match.group(2) or "").rstrip("0")
         if len(fraction) > decimals:
             raise SolanaCommerceError(SolanaErrorCode.INVALID_AMOUNT, "Amount has more fractional digits than the asset supports.")
         raw = int(match.group(1)) * 10**decimals

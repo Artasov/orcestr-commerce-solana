@@ -57,6 +57,9 @@ class SolanaCommitment(StrEnum):
         return {self.CONFIRMED: 1, self.FINALIZED: 2}[self]
 
 
+SettlementRounding = Literal["exact", "down", "half_up", "up"]
+
+
 class TokenExtensionSnapshot(BaseModel):
     """Records one decoded Token-2022 extension without trusting metadata."""
 
@@ -153,10 +156,10 @@ class SettlementQuoteSnapshot(BaseModel):
     source: str = Field(min_length=1, max_length=100)
     version: str = Field(min_length=1, max_length=100)
     commercial_amount: str = Field(pattern=r"^(0|[1-9][0-9]*)(?:\.[0-9]+)?$")
-    commercial_currency: str = Field(min_length=1, max_length=16)
+    commercial_currency: str = Field(min_length=1, max_length=12)
     rate_numerator: str | None = Field(default=None, pattern=r"^[0-9]+$")
     rate_denominator: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$")
-    rounding: str = Field(default="down", pattern=r"^(down|half_up|up)$")
+    rounding: SettlementRounding
 
 
 class SettlementSnapshot(BaseModel):

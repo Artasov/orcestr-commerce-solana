@@ -31,6 +31,7 @@ from orcestr_commerce_solana.repositories import (
 from orcestr_commerce_solana.rpc import HttpSolanaRpc, SolanaRpc
 from orcestr_commerce_solana.schemas import (
     SettlementQuoteSnapshot,
+    SettlementRounding,
     SettlementSnapshot,
     SolanaApiErrorDTO,
     SolanaAssetKind,
@@ -56,6 +57,7 @@ from orcestr_commerce_solana.schemas import (
 from orcestr_commerce_solana.services.assets import SolanaAssetValidator, StaticAssetRegistry, Token2022Codec
 from orcestr_commerce_solana.services.intents import (
     FixedSettlementQuoteProvider,
+    OrderSnapshotSettlementQuoteProvider,
     RecipientContext,
     RecipientResolver,
     RecipientSnapshot,

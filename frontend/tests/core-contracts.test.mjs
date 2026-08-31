@@ -5,6 +5,7 @@ import {
   TOKEN_2022_PROGRAM_ADDRESS,
   decimalAmountToRaw,
   parseDecimalAmount,
+  parseCommercePaymentOptionsResponse,
   parseRawAmount,
   parseSolanaCheckoutAction,
   parseSolanaPaymentIntent,
@@ -35,6 +36,8 @@ test("parses a Token-2022 intent with string amounts", () => {
     "beauty-tenant-wallet:v1",
   );
   assert.equal(parsed.settlement.expectedRawAmount, "2500000000");
+  assert.equal(parsed.settlement.quote.rounding, "exact");
+  assert.equal(parsed.settlement.quote.commercialCurrency, "ORCESTR");
   assert.equal(parsed.action?.kind, "solana_transaction_request");
 });
 
@@ -89,7 +92,7 @@ test("parses only the shared payment update envelope", () => {
   );
 });
 
-test("parses the CommerceXL 0.3.1 payment envelope and selects Solana options", () => {
+test("parses the CommerceXL 0.3.2 payment envelope and selects Solana options", () => {
   const payment = parseCommercePayment({
     id: PAYMENT_ID,
     order_id: ORDER_ID,
@@ -116,6 +119,8 @@ test("parses the CommerceXL 0.3.1 payment envelope and selects Solana options", 
           label: "Balance",
           actionKind: "completed",
           details: {},
+          amount: "1000",
+          currency: "RUB",
           paymentSystem: "balance",
           providerKind: "builtin",
         },
@@ -124,6 +129,8 @@ test("parses the CommerceXL 0.3.1 payment envelope and selects Solana options", 
           label: "Solana",
           actionKind: "solana_transaction_request",
           details: {},
+          amount: "2500.125",
+          currency: "ORCESTR",
           paymentSystem: "solana",
           providerKind: "solana",
         },
@@ -132,6 +139,8 @@ test("parses the CommerceXL 0.3.1 payment envelope and selects Solana options", 
           label: "Unsupported Solana action",
           actionKind: "redirect",
           details: {},
+          amount: "2500.125",
+          currency: "ORCESTR",
           paymentSystem: "solana",
           providerKind: "solana",
         },
@@ -139,6 +148,44 @@ test("parses the CommerceXL 0.3.1 payment envelope and selects Solana options", 
     }).map((option) => option.id),
     ["solana"],
   );
+});
+
+test("requires exact amount and normalized currency on CommerceXL 0.3.2 options", () => {
+  const option = {
+    id: "solana",
+    label: "Solana",
+    action_kind: "solana_transaction_request",
+    details: {},
+    amount: "125.123456",
+    currency: "ORCESTR",
+    payment_system: "solana",
+    provider_kind: "solana",
+  };
+  const parsed = parseCommercePaymentOptionsResponse({ options: [option] });
+
+  assert.equal(parsed.options[0].amount, "125.123456");
+  assert.equal(parsed.options[0].currency, "ORCESTR");
+
+  for (const invalidOption of [
+    { ...option, amount: undefined },
+    { ...option, amount: "1e3" },
+  ]) {
+    assert.throws(
+      () => parseCommercePaymentOptionsResponse({ options: [invalidOption] }),
+      /Decimal amount/u,
+    );
+  }
+  for (const invalidOption of [
+    { ...option, currency: undefined },
+    { ...option, currency: "orcestr" },
+    { ...option, currency: " ORCESTR" },
+    { ...option, currency: "ABCDEFGHIJKLM" },
+  ]) {
+    assert.throws(
+      () => parseCommercePaymentOptionsResponse({ options: [invalidOption] }),
+      /commerce_payment_options\.options\[0\]\.currency/u,
+    );
+  }
 });
 
 test("rejects timestamps without an explicit UTC offset", () => {

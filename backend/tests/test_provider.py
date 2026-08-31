@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from orcestr_commerce_solana.schemas.assets import (
 from orcestr_commerce_solana.services.assets import StaticAssetRegistry
 from orcestr_commerce_solana.services.intents import (
     FixedSettlementQuoteProvider,
+    OrderSnapshotSettlementQuoteProvider,
     RecipientSnapshot,
     StaticRecipientResolver,
 )
@@ -125,6 +127,8 @@ class TestSolanaPaymentServiceOptions:
                 id=asset.policy.option_id,
                 label="Orcestr",
                 action_kind="solana_transaction_request",
+                amount=order.amount,
+                currency=order.currency,
                 payment_system="solana",
                 provider_kind="solana",
             ),
@@ -241,6 +245,8 @@ class TestSolanaPaymentServiceOptions:
                         id=option_id,
                         label="Orcestr",
                         action_kind="solana_transaction_request",
+                        amount=order.amount,
+                        currency=order.currency,
                         payment_system="solana",
                         provider_kind="solana",
                     ),
@@ -254,6 +260,87 @@ class TestSolanaPaymentServiceOptions:
         assert [item.settlement.expected_raw_amount for item in intents.creations] == ["1000000", "4500000"]
         assert [item.settlement.recipient_policy_version for item in intents.creations] == ["1", "1"]
         assert orders[0].kind == orders[1].kind
+
+    @pytest.mark.asyncio
+    async def test_order_snapshot_quote_freezes_db_orcestr_price(self, now) -> None:
+        class CapturingIntents:
+            def __init__(self) -> None:
+                self.clock = FrozenClock(now)
+                self.creation = None
+
+            @staticmethod
+            def new_reference() -> str:
+                return str(Pubkey.new_unique())
+
+            async def create(self, session, creation):
+                _ = session
+                self.creation = creation
+                return IntentActionIssue(
+                    intent_public_id=uuid4(),
+                    uri="https://pay.example.com/commerce/solana/transaction-requests/test",
+                    expires_at=creation.expires_at,
+                )
+
+        asset = self._token_asset()
+        option_id = asset.policy.option_id
+        order = SimpleNamespace(
+            id=uuid4(),
+            amount=Decimal("125.123456"),
+            currency="ORCESTR",
+            kind="ai_credit_pack",
+            product_code="beauty.credits.100",
+        )
+        recipient = RecipientSnapshot(
+            wallet="11111111111111111111111111111111",
+            token_account="11111111111111111111111111111111",
+            policy_version="treasury-v1",
+        )
+        intents = CapturingIntents()
+        dependencies = SolanaProviderDependencies(
+            config=SolanaCommerceConfig(public_base_url="https://pay.example.com", merchant_label="Merchant"),
+            assets=StaticAssetRegistry((asset,)),
+            recipients=StaticRecipientResolver({option_id: recipient}),
+            price_keys=ProductCodePriceKeyResolver(),
+            quotes=OrderSnapshotSettlementQuoteProvider({option_id: "ORCESTR"}, version="catalog-v1"),
+            intents=intents,
+        )
+        service = SolanaPaymentService(
+            FakeCommerce(),
+            PaymentProviderRegistration(
+                system="solana",
+                provider_kind="solana",
+                factory=lambda commerce, item: SolanaPaymentService(commerce, item, dependencies),
+            ),
+            dependencies,
+        )
+
+        await service.create(
+            SimpleNamespace(),
+            SimpleNamespace(
+                option=PaymentOptionDTO(
+                    id=option_id,
+                    label="Orcestr",
+                    action_kind="solana_transaction_request",
+                    amount=order.amount,
+                    currency=order.currency,
+                    payment_system="solana",
+                    provider_kind="solana",
+                ),
+                public_base_url=dependencies.config.public_base_url,
+                order=order,
+                actor=SimpleNamespace(id=1),
+                payment=SimpleNamespace(id=1, public_id=uuid4()),
+            ),
+        )
+
+        assert intents.creation is not None
+        settlement = intents.creation.settlement
+        assert settlement.expected_raw_amount == "125123456"
+        assert settlement.display_amount == "125.123456"
+        assert settlement.quote.commercial_amount == "125.123456"
+        assert settlement.quote.commercial_currency == "ORCESTR"
+        assert settlement.quote.source == "order_snapshot"
+        assert settlement.quote.rounding == "exact"
 
     @pytest.mark.asyncio
     async def test_cancel_returns_persisted_user_reason_to_commercexl(self, now) -> None:

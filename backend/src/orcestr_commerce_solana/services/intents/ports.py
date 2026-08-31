@@ -6,7 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from orcestr_commerce_solana.schemas.assets import SolanaAssetPolicy, ValidatedSolanaAsset
+from orcestr_commerce_solana.schemas.assets import (
+    SettlementRounding,
+    SolanaAssetPolicy,
+    ValidatedSolanaAsset,
+)
 
 
 class RecipientContext(BaseModel):
@@ -85,7 +89,7 @@ class SettlementQuoteRequest(BaseModel):
     order_public_id: UUID
     price_key: str = Field(min_length=1, max_length=100)
     commercial_amount: str
-    commercial_currency: str
+    commercial_currency: str = Field(min_length=1, max_length=12)
     asset: SolanaAssetPolicy
 
 
@@ -99,7 +103,7 @@ class SettlementQuoteResult(BaseModel):
     version: str = Field(min_length=1, max_length=100)
     rate_numerator: str | None = Field(default=None, pattern=r"^[0-9]+$")
     rate_denominator: str | None = Field(default=None, pattern=r"^[1-9][0-9]*$")
-    rounding: str = Field(default="down", pattern=r"^(down|half_up|up)$")
+    rounding: SettlementRounding
 
 
 class SettlementQuoteProvider(Protocol):
@@ -125,41 +129,3 @@ class SettlementPriceKeyResolver(Protocol):
     ) -> str | None:
         """Returns a product-level key, or None when this order is not payable by Solana."""
         ...
-
-class FixedSettlementQuoteProvider:
-    """Uses explicit per-option raw prices for the safe first production flow."""
-
-    def __init__(self, raw_prices: dict[tuple[str, str], str], *, version: str = "1") -> None:
-        for key, raw in raw_prices.items():
-            if (
-                len(key) != 2
-                or not key[0]
-                or not key[1]
-                or not raw.isdigit()
-                or raw != str(int(raw))
-                or int(raw) < 1
-                or int(raw) > 18_446_744_073_709_551_615
-            ):
-                raise ValueError("Fixed Solana raw prices require non-empty keys and canonical positive u64 values.")
-        self._raw_prices = dict(raw_prices)
-        self._version = version
-
-    async def quote(self, request: SettlementQuoteRequest) -> SettlementQuoteResult:
-        """Returns the configured raw amount without market or float arithmetic."""
-        raw = self._raw_prices.get((request.price_key, request.asset.option_id))
-        if raw is None:
-            raise KeyError(
-                f"No fixed quote configured for price key {request.price_key} and Solana asset {request.asset.option_id}.",
-            )
-        return SettlementQuoteResult(
-            expected_raw_amount=raw,
-            source="fixed",
-            version=self._version,
-        )
-
-    async def is_available(self, request: SettlementQuoteRequest) -> bool:
-        """Returns whether an explicit raw price exists and fits this asset policy."""
-        raw = self._raw_prices.get((request.price_key, request.asset.option_id))
-        if raw is None:
-            return False
-        return int(request.asset.minimum_raw_amount) <= int(raw) <= int(request.asset.maximum_raw_amount)

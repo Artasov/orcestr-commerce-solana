@@ -171,7 +171,7 @@ function settlement(overrides) {
       commercialCurrency: "USD",
       rateNumerator: null,
       rateDenominator: null,
-      rounding: "down",
+      rounding: "exact",
     },
     ...overrides,
   };

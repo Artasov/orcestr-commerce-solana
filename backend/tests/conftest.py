@@ -186,6 +186,7 @@ def quote() -> SettlementQuoteSnapshot:
         version="1",
         commercial_amount="10.00",
         commercial_currency="USD",
+        rounding="exact",
     )
 
 

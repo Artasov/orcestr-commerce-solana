@@ -20,7 +20,7 @@ second auth provider, query client, WebSocket connection or polling loop.
 
 ## First-release data flow
 
-1. An authenticated user creates a server-priced CommerceXL order.
+1. An authenticated user creates a server-priced CommerceXL order. Each catalogue currency is a separate database price row, and the order freezes the selected human decimal amount and normalized currency.
 2. The host lists server-configured payment options. A client selects only an opaque option id.
 3. CommerceXL creates an idempotent payment attempt and invokes the Solana provider.
 4. The provider freezes the settlement snapshot and creates a unique reference plus an expiring
@@ -41,6 +41,14 @@ the host recipient-policy version,
 asset kind, exact mint, Token-2022 program id, decimals, expected integer raw amount, reference,
 quote provenance, expiry and the mandatory `finalized` policy. Display labels, metadata URIs and symbols are
 informational and are never used to verify value.
+
+For database-priced orders denominated in the selected asset, the recommended order-snapshot
+quote provider converts the already frozen CommerceXL decimal amount directly to raw units. It
+requires an explicit per-option commerce-currency allowlist and exact currency equality,
+supported fractional precision, positive u64 and configured option bounds. The quote records
+`rounding="exact"`; absence of rounding provenance is invalid. Fixed raw quotes remain a separate
+strategy for amounts computed before checkout, not a duplicate product-price store.
+The validated option and mint define asset identity; display symbols remain informational.
 
 Token-2022 assets enter the runtime only through an explicit registry. Registration reads the
 mint from the configured cluster and rejects a wrong owner, decimals mismatch, active

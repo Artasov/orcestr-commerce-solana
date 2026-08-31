@@ -52,6 +52,13 @@ Token-2022 ownership, 6 decimals, metadata name `Orcestr`, symbol `ORCESTR`, and
 mint/freeze authorities. Applications must still register it by exact mint and cluster in an
 explicit allowlist.
 
+Product prices remain CommerceXL catalogue data. A product may have separate RUB, USD and
+ORCESTR database rows; CommerceXL 0.3.2 freezes the chosen amount/currency in the order and
+payment option. The recommended `OrderSnapshotSettlementQuoteProvider` converts that exact
+human ORCESTR snapshot to Token-2022 raw units without float arithmetic or rounding. Treasury
+and RPC configuration may live in deployment secrets, but editable product prices must not be
+duplicated in environment variables.
+
 ## Development
 
 ```bash
