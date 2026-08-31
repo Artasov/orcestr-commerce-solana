@@ -17,7 +17,7 @@ const PAYER = "AKnL4NNf3DGWZJS6cPknBuEGnVsV4A4m5tgebLHaRSZ9";
 const RECIPIENT = "9hSR6S7WPtxmTojgo6GG3k4yDPecgJY292j7xrsUGWBu";
 const REFERENCE = "GyGKxMyg1p9SsHfm15MkNUu1u9TN2JtTspcdmrtGUdse";
 const DESTINATION = "8SFqwqnq4whPhs8icwHA2hQg3hUoN1qrCLK1SBx3WKwe";
-const SOURCE_TOKEN_ACCOUNT = "9DdB3X4caQd5hpDRnzNg58Kzvx82VKtmAfJggyjgD8eY";
+const PAYER_ASSOCIATED_ACCOUNT = "9DdB3X4caQd5hpDRnzNg58Kzvx82VKtmAfJggyjgD8eY";
 const NON_ASSOCIATED_SOURCE = "EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1";
 const MINT = "HztMC7xr2j6ngpfWbYsF5xnRZkgouDXQ5rVis3C3pump";
 const ISSUANCE_MEMO = "orcestr-issuance:00000000-0000-4000-8000-000000000004";
@@ -74,7 +74,7 @@ test("inspects a frozen Token-2022 TransferChecked v0 transaction and exact memo
   assert.equal(inspected.transfers[0]?.mint, MINT);
   assert.equal(
     inspected.transfers[0]?.sourceTokenAccount,
-    SOURCE_TOKEN_ACCOUNT,
+    PAYER_ASSOCIATED_ACCOUNT,
   );
   assert.equal(inspected.transfers[0]?.recipientTokenAccount, DESTINATION);
   assert.equal(inspected.transfers[0]?.rawAmount, "2500000000");
@@ -109,7 +109,7 @@ test("inspects a frozen Token-2022 TransferChecked v0 transaction and exact memo
       }),
     /does not match/u,
   );
-  assert.equal(expected.sourceTokenAccount, SOURCE_TOKEN_ACCOUNT);
+  assert.equal(expected.sourceTokenAccount, PAYER_ASSOCIATED_ACCOUNT);
 });
 
 test("rejects a Token-2022 transfer from a non-associated payer account", async () => {
@@ -124,7 +124,7 @@ test("rejects a Token-2022 transfer from a non-associated payer account", async 
     () =>
       validateInspectedTransaction(inspected, {
         payerAddress: PAYER,
-        sourceTokenAccount: SOURCE_TOKEN_ACCOUNT,
+        sourceTokenAccount: PAYER_ASSOCIATED_ACCOUNT,
         settlement: settlement({
           kind: "token",
           assetName: "Orcestr",
