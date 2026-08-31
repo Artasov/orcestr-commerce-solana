@@ -168,7 +168,7 @@ class SolanaReconciler:
                 retryable_count += 1
                 continue
             if intent.state in {SolanaIntentState.CANCELLED, SolanaIntentState.EXPIRED}:
-                evidences, attempts, provisional_reason = await self._verify_terminal_candidates(
+                evidences, attempts, provisional = await self._verify_terminal_candidates(
                     intent,
                     candidates,
                     now,
@@ -183,29 +183,67 @@ class SolanaReconciler:
                     continue
                 await self.store.mark_retry(
                     intent.public_id,
-                    provisional_reason or scan.reason_code,
+                    (provisional.reason_code if provisional is not None else None)
+                    or scan.reason_code,
                 )
                 retryable_count += 1
                 continue
 
             if intent.expires_at <= now:
-                # Public expiry is not extended by the evidence grace. A
-                # complete pass first makes the payment terminal; any exact
-                # finalized transfer is then recorded without product effect.
+                # Public expiry stops new actions, but it must not erase an
+                # exact transfer submitted inside an issuance acceptance
+                # window. Reference-indexed finalized evidence can therefore
+                # settle before expiry is persisted. Exact confirmed evidence
+                # remains pending only through the immutable grace horizon.
                 terminal_candidates = tuple(
                     candidate for candidate in candidates if candidate.reference_indexed
                 )
-                evidences, attempts, provisional_reason = await self._verify_terminal_candidates(
+                evidences, attempts, provisional = await self._verify_terminal_candidates(
                     intent,
                     terminal_candidates,
                     now,
                 )
+                matches = tuple(
+                    evidence
+                    for evidence in evidences
+                    if evidence.disposition == VerificationDisposition.MATCH
+                )
+                policy_reviews = tuple(
+                    evidence
+                    for evidence in evidences
+                    if evidence.disposition == VerificationDisposition.REVIEW
+                )
+                if matches and intent.reconcile_until > now:
+                    for attempt in (*attempts, *policy_reviews):
+                        await self.store.record_attempt(intent.public_id, attempt)
+                    await self.store.apply(intent.public_id, matches[0])
+                    applied_count += 1
+                    for duplicate in matches[1:]:
+                        if await self.store.record_duplicate_payment(
+                            intent.public_id,
+                            duplicate,
+                        ):
+                            applied_count += 1
+                    continue
+                if (
+                    provisional is not None
+                    and provisional.disposition == VerificationDisposition.CONFIRMED
+                    and intent.reconcile_until > now
+                ):
+                    for attempt in (*attempts, *policy_reviews):
+                        await self.store.record_attempt(intent.public_id, attempt)
+                    await self.store.apply(intent.public_id, provisional)
+                    await self.store.mark_retry(intent.public_id, provisional.reason_code)
+                    applied_count += 1
+                    retryable_count += 1
+                    continue
                 if not scan.complete:
                     for attempt in attempts:
                         await self.store.record_attempt(intent.public_id, attempt)
                     await self.store.mark_retry(
                         intent.public_id,
-                        provisional_reason or scan.reason_code,
+                        (provisional.reason_code if provisional is not None else None)
+                        or scan.reason_code,
                     )
                     retryable_count += 1
                     continue
@@ -395,7 +433,11 @@ class SolanaReconciler:
         intent: ReconciliationIntent,
         signatures: tuple[ReconciliationCandidate, ...],
         now: datetime,
-    ) -> tuple[tuple[VerificationResult, ...], tuple[VerificationResult, ...], str | None]:
+    ) -> tuple[
+        tuple[VerificationResult, ...],
+        tuple[VerificationResult, ...],
+        VerificationResult | None,
+    ]:
         """Collects every new finalized terminal transfer in one bounded pass."""
         if not intent.issuances:
             return (), (), None
@@ -404,7 +446,7 @@ class SolanaReconciler:
             recorded.add(intent.verified_signature)
         evidences: list[VerificationResult] = []
         attempts: list[VerificationResult] = []
-        provisional_reason: str | None = None
+        provisional: VerificationResult | None = None
         for candidate in signatures:
             if not candidate.reference_indexed or candidate.signature in recorded:
                 continue
@@ -435,9 +477,13 @@ class SolanaReconciler:
                     VerificationDisposition.OBSERVED,
                     VerificationDisposition.CONFIRMED,
                 }:
-                    provisional_reason = provisional_reason or result.reason_code
+                    if (
+                        provisional is None
+                        or result.disposition == VerificationDisposition.CONFIRMED
+                    ):
+                        provisional = result
                 break
-        return tuple(evidences), tuple(attempts), provisional_reason
+        return tuple(evidences), tuple(attempts), provisional
 
     @staticmethod
     def _is_terminal_evidence(result: VerificationResult) -> bool:

@@ -41,15 +41,22 @@ transactions go to review rather than success.
 RPC timeout, `429`, a temporarily missing transaction or insufficient finality maps to a
 retryable `UNKNOWN`/pending result. A correctly decoded transaction at `confirmed` remains an
 intermediate state and schedules another check. A cryptographically valid mismatch maps to a stable reject
-or review reason. Only complete `finalized` evidence maps to paid. A late valid payment
-is recorded for reconciliation but does not silently reactivate an expired order.
+or review reason. Only complete `finalized` evidence maps to paid. Public expiry closes new
+payment actions, but an exact transfer with an on-chain `block_time` inside its frozen issuance
+acceptance window remains valid when reference reconciliation finalizes it before `reconcile_until`.
+A transfer outside that window, or proof discovered at or after the horizon, is recorded for
+reconciliation and does not reactivate an expired order.
 
 One failed/review issuance is audit evidence, not the verdict for the entire payment intent. The
 worker continues across other issuances and later passes. RPC status and raw bytes are fetched once
 per signature per pass, so RPC calls do not multiply by the issuance count. Payment product effects
-are allowed only before public `expires_at`; after a complete expiry scan, every distinct finalized
-transfer is attached to the unchanged expired/cancelled CommerceXL payment during the bounded grace
-period. Persisted signatures are excluded from later passes, so one late transfer cannot hide another.
+are allowed only for transfers submitted inside a frozen issuance acceptance window. Exact finalized
+evidence settles when discovered after public `expires_at` but before `reconcile_until`; exact confirmed
+evidence remains pending only inside the same horizon. At or after the horizon evidence is fail-closed
+without a product effect. Once an unmatched intent becomes expired or is cancelled, every
+distinct finalized transfer is attached to the unchanged terminal CommerceXL payment during the
+bounded grace period. Persisted signatures are excluded from later passes, so one late transfer cannot
+hide another.
 
 Verifier calls are idempotent. Persisting evidence and asking CommerceXL to apply a verification
 result occurs under row locks and unique constraints so concurrent discovery, retries and event

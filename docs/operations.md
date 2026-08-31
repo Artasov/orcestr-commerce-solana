@@ -38,12 +38,18 @@ the asset. The account must be the canonical Token-2022 ATA for the configured w
 be initialized on the pinned cluster, and pass the extension policy. Version 0.1 does not create
 or rent-fund a recipient ATA during checkout because the payment service holds no treasury key.
 
-At `expires_at`, a complete scan moves the public payment to expired. If any issuance exists,
-`next_check_at` remains scheduled through the immutable `reconcile_until` grace; cancellation uses
-the same terminal scan. Every distinct finalized exact transfer discovered in this period is recorded
-through CommerceXL with the unchanged terminal state and its own outbox/manual-alert event. Do not silently
-grant the product, reuse it for another order or automatically refund it in 0.1. After a complete
-scan at the horizon, clear `next_check_at` even if only provisional status remains.
+At `expires_at`, public actions close and reconciliation performs a reference-indexed scan. An exact
+finalized transfer whose `block_time` is inside the issuance acceptance window settles normally when
+discovered after that public deadline but before the immutable `reconcile_until` horizon. Exact
+confirmed evidence remains pending for finality only inside that horizon. At or after `reconcile_until`,
+all evidence is fail-closed without a product effect. A complete scan then expires the attempt and
+records exact finalized transfers as terminal evidence.
+
+Cancellation and already expired attempts use the terminal scan. Every distinct finalized transfer
+discovered there is recorded through CommerceXL with the unchanged terminal state and its own
+outbox/manual-alert event. Do not silently grant the product, reuse it for another order or automatically
+refund it. After a complete scan at the horizon, clear `next_check_at` even if only provisional status
+remains.
 
 Paid attempts also remain scheduled only until `reconcile_until`, because two transactions may
 have been issued and signed before the first observation. Additional finalized matches produce a
