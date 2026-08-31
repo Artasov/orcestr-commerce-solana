@@ -29,7 +29,7 @@ export function useSolanaPaymentOptions(
   });
 }
 
-/** CommerceXL 0.3.1 provider-neutral payment options for an order. */
+/** CommerceXL 0.3.2 provider-neutral payment options with an order price snapshot. */
 export function useCommercePaymentOptions(
   orderPublicId: string | null,
   options: { readonly enabled?: boolean } = {},
@@ -64,7 +64,7 @@ export function useSolanaPaymentIntent(
   });
 }
 
-/** CommerceXL 0.3.1 canonical payment state. */
+/** CommerceXL 0.3.2 canonical payment state. */
 export function useCommercePayment(
   paymentPublicId: string | null,
   options: { readonly enabled?: boolean } = {},
@@ -96,7 +96,7 @@ export function useCreateSolanaPaymentIntent() {
   });
 }
 
-/** Creates a payment through the stable CommerceXL 0.3.1 attempt endpoint. */
+/** Creates a payment through the stable CommerceXL 0.3.2 attempt endpoint. */
 export function useCreateCommercePaymentAttempt() {
   const client = useSolanaCommerceClient();
   const queryClient = useQueryClient();

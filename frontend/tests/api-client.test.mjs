@@ -98,13 +98,15 @@ test("reissues the short-lived addon action without changing intent identity", a
   assert.equal(requests[0].body, null);
 });
 
-test("implements the stable CommerceXL 0.3.1 payment flow", async () => {
+test("implements the stable CommerceXL 0.3.2 payment flow", async () => {
   const requests = [];
   const paymentOption = {
     id: "solana:orce-mainnet",
     label: "ORCESTR on Solana",
     action_kind: "solana_transaction_request",
     details: { symbol: "ORCESTR" },
+    amount: "2500.125",
+    currency: "ORCESTR",
     payment_system: "solana",
     provider_kind: "solana",
   };
@@ -145,6 +147,8 @@ test("implements the stable CommerceXL 0.3.1 payment flow", async () => {
 
   const listed = await client.listCommercePaymentOptions(ORDER_ID);
   assert.equal(listed.options[0].providerKind, "solana");
+  assert.equal(listed.options[0].amount, "2500.125");
+  assert.equal(listed.options[0].currency, "ORCESTR");
   const created = await client.createCommercePaymentAttempt({
     orderPublicId: ORDER_ID,
     paymentOptionId: paymentOption.id,

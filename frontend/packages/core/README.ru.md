@@ -36,7 +36,7 @@ const payment = await client.createCommercePaymentAttempt({
 const intent = await client.getPaymentIntent(payment.id);
 ```
 
-Это стабильный flow CommerceXL 0.3.1: order → provider-neutral payment options → payment attempt. `CommercePayment` остаётся каноническим статусом карточки заказа, а Solana intent добавляет immutable settlement snapshot для checkout. Для повторного открытия используйте `issueCommerceCheckoutAction(payment.id)` либо `issuePaymentIntentAction(payment.id)`: выпускается новая короткоживущая capability без замены payment/reference.
+Это стабильный flow CommerceXL 0.3.2: order → provider-neutral payment options → payment attempt. Каждый option обязательно содержит точные `amount` и нормализованную `currency` из snapshot заказа, поэтому checkout показывает server-owned цену без чтения изменяемого product row и без доверия к frontend. `CommercePayment` остаётся каноническим статусом карточки заказа, а Solana intent добавляет immutable settlement snapshot для checkout. Для повторного открытия используйте `issueCommerceCheckoutAction(payment.id)` либо `issuePaymentIntentAction(payment.id)`: выпускается новая короткоживущая capability без замены payment/reference.
 
 В интеграции с Orcestr Auth функция `authFetch` сохраняет общую cookie/OAuth-сессию, refresh, CSRF и typed API errors. Ответы с capability помечены `responseSensitivity: "capability"`; встроенный executor редактирует их HTTP error body, а parser errors не сохраняют отклонённые raw values. Custom executor также не должен логировать или сохранять capability URL/body.
 
@@ -76,13 +76,15 @@ Canonical URI хранится только в памяти: внутри кор
 
 Коммерческие decimal amounts и blockchain base units передаются строками. `parseDecimalAmount`, `parseRawAmount`, `decimalAmountToRaw` и `rawAmountToDecimal` не используют JavaScript `Number` для расчётов.
 
+В quote snapshot обязателен явный rounding mode. `exact` означает, что backend напрямую перевёл сумму DB-заказа в raw units и отклонил неподдерживаемую дробную точность; отсутствие `rounding` никогда не трактуется как legacy default.
+
 Runtime parsers связывают cluster с точным genesis hash, декодируют address/signature в 32/64 bytes, требуют positive u64 raw amounts и согласованные границы option, а также проверяют `display_amount == expected_raw_amount / 10^decimals`. В каждом immutable settlement обязателен canonical snapshot `recipient_policy_version` для audit provenance resolver-а; он не заменяет точный адрес получателя при verification.
 
 `validateInspectedTransaction` принимает только один точный top-level перевод native SOL либо Token-2022 `TransferChecked` с ожидаемыми payer, canonical Token-2022 associated token account плательщика, mint, token account получателя, raw amount, decimals, reference, обязательным подписанным memo `orcestr-issuance:<uuid4>` и точным опциональным settlement memo. Встроенный inspector также требует строгий порядок: issuance memo первым, settlement memo вторым (если есть), платёжная инструкция последней. Это защита перед подписью; окончательное решение об оплате принимает backend после нужного commitment.
 
 ## Сборка
 
-Для локальной интеграции сначала соберите source workspace, укажите в consumer точную зависимость `file:../../orcestr-commerce-solana/frontend/packages/core` и выполните его `npm install` до запуска dev server. Глобальный `npm link` не используйте; перед релизным коммитом верните registry-версию `0.1.0`.
+Для локальной интеграции сначала соберите source workspace, укажите в consumer точную зависимость `file:../../orcestr-commerce-solana/frontend/packages/core` и выполните его `npm install` до запуска dev server. Глобальный `npm link` не используйте; перед релизным коммитом верните registry-версию `0.2.0`.
 
 Из папки `frontend` репозитория:
 

@@ -1,5 +1,6 @@
 from orcestr_commerce_solana.schemas.assets import (
     SettlementQuoteSnapshot,
+    SettlementRounding,
     SettlementSnapshot,
     SolanaAssetKind,
     SolanaAssetPolicy,

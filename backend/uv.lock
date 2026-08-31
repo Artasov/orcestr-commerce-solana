@@ -76,16 +76,16 @@ wheels = [
 
 [[package]]
 name = "commercexl"
-version = "0.3.1"
+version = "0.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
     { name = "pydantic" },
     { name = "sqlalchemy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3a/1b/38f9aafd078a84596de9cb0adb9a946ad72419fb752745fa060dae9ff6a0/commercexl-0.3.1.tar.gz", hash = "sha256:411b064680a36b7ab05d55face28fa108424e19c4cfda53f420218d812f55c9c", size = 73328, upload-time = "2026-08-31T02:49:17.97Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/47/6e672687d4cc6034fa48f4fe69cc7f6372e346fdcb0f42f1788d716cda6f/commercexl-0.3.2.tar.gz", hash = "sha256:8ee308398b652335113cf4fa82d2bd3c91a4ef5d2df7ab1f85b6d90ed23a65e1", size = 74645, upload-time = "2026-08-31T18:50:07.582Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/06/b2d08ab6f7bdd47d9ff87691d0098e3c0b2e7c978f1c2c8d0e2cee7e96f3/commercexl-0.3.1-py3-none-any.whl", hash = "sha256:ba68311e6b6449abf043ef23267abe84a739da7fd320a7cf95a20802c5215ee5", size = 93631, upload-time = "2026-08-31T02:49:16.586Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/00/c7211dfb8b2478d27f6e7d1c8cebad11259964789cfd9e3c7f9b7a2f3e6c/commercexl-0.3.2-py3-none-any.whl", hash = "sha256:9987e4bea8f92abf145615547362b1030e7d96c29413c03526c99e41554ef306", size = 94043, upload-time = "2026-08-31T18:50:06.166Z" },
 ]
 
 [[package]]
@@ -209,7 +209,7 @@ wheels = [
 
 [[package]]
 name = "orcestr-commerce-solana"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "commercexl" },
@@ -230,7 +230,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "commercexl", specifier = ">=0.3.1,<0.4" },
+    { name = "commercexl", specifier = ">=0.3.2,<0.4" },
     { name = "fastapi", specifier = ">=0.116,<1" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "pydantic", specifier = ">=2.11,<3" },

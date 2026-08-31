@@ -1,6 +1,6 @@
 {
   "name": "@orcestr/commerce-solana-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Framework-independent Token-2022 payment contracts and API client for Orcestr Commerce Solana.",
   "author": "Artasov",
   "license": "MPL-2.0",

@@ -49,4 +49,4 @@ Paid attempts also remain scheduled only until `reconcile_until`, because two tr
 have been issued and signed before the first observation. Additional finalized matches produce a
 duplicate-payment transfer/event and an operator signal while preserving the original primary
 signature and public paid state. They never execute the order again; operators decide refund or
-credit policy outside v0.1.
+credit policy outside the current release.

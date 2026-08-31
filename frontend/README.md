@@ -34,7 +34,7 @@ Use `npm install`, not a global link, for normal development. Run this workspace
 }
 ```
 
-Supplying all three paths keeps exact internal `0.1.0` dependencies local. Restore registry versions before committing a release consumer.
+Supplying all three paths keeps exact internal `0.2.0` dependencies local. Restore registry versions before committing a release consumer.
 
 Every package is ESM-only, ships declarations, and contains its own `LICENSE`, `NOTICE`, `TRADEMARKS.md`, and bilingual README in the npm tarball.
 

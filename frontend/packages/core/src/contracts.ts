@@ -98,6 +98,8 @@ export type SolanaSettlementAsset = Token2022Asset | NativeSolAsset;
 
 export type SolanaRequiredCommitment = "finalized";
 
+export type SolanaSettlementRounding = "exact" | "down" | "half_up" | "up";
+
 export type SolanaSettlementQuote = {
   readonly source: string;
   readonly version: string;
@@ -105,7 +107,7 @@ export type SolanaSettlementQuote = {
   readonly commercialCurrency: string;
   readonly rateNumerator: RawAmountString | null;
   readonly rateDenominator: RawAmountString | null;
-  readonly rounding: "down" | "half_up" | "up";
+  readonly rounding: SolanaSettlementRounding;
 };
 
 export type SolanaPaymentOption = {

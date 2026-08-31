@@ -51,6 +51,12 @@ runtime. Frontend получает от host-приложения его `QueryC
 6 decimals, metadata `Orcestr`/`ORCESTR` и отключённые mint/freeze authorities. Приложение всё
 равно обязано зарегистрировать точный mint и cluster в явном allowlist.
 
+Цены продуктов остаются данными каталога CommerceXL. У продукта могут быть отдельные строки
+RUB, USD и ORCESTR в базе; CommerceXL 0.3.2 фиксирует выбранные amount/currency в заказе и
+payment option. Рекомендуемый `OrderSnapshotSettlementQuoteProvider` без float и округления
+переводит exact human ORCESTR snapshot в Token-2022 raw units. Treasury и RPC допустимо хранить
+в deployment secrets, но изменяемые цены продуктов нельзя дублировать в ENV.
+
 ## Разработка
 
 ```bash

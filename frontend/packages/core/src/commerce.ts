@@ -44,6 +44,8 @@ export type CommercePaymentOption = {
   readonly label: string;
   readonly actionKind: string;
   readonly details: Readonly<Record<string, JsonValue>>;
+  readonly amount: DecimalAmountString;
+  readonly currency: string;
   readonly paymentSystem: string;
   readonly providerKind: string;
 };
@@ -117,7 +119,7 @@ export function parseCommercePayment(value: unknown): CommercePayment {
     orderId: readUuid(data.order_id, `${path}.order_id`),
     attemptNo: readInteger(data.attempt_no, `${path}.attempt_no`),
     amount: parseDecimalAmount(data.amount),
-    currency: readString(data.currency, `${path}.currency`),
+    currency: parseCommerceCurrency(data.currency, `${path}.currency`),
     paymentSystem: readString(data.payment_system, `${path}.payment_system`),
     providerKind: readString(data.provider_kind, `${path}.provider_kind`),
     paymentOptionId: readString(
@@ -207,9 +209,27 @@ function parseCommercePaymentOption(
     label: readString(data.label, `${path}.label`),
     actionKind: readString(data.action_kind, `${path}.action_kind`),
     details: readJsonObject(data.details ?? {}, `${path}.details`),
+    amount: parseDecimalAmount(data.amount),
+    currency: parseCommerceCurrency(data.currency, `${path}.currency`),
     paymentSystem: readString(data.payment_system, `${path}.payment_system`),
     providerKind: readString(data.provider_kind, `${path}.provider_kind`),
   };
+}
+
+function parseCommerceCurrency(value: unknown, path: string): string {
+  const currency = readString(value, path);
+  if (
+    currency.length > 12 ||
+    currency !== currency.trim() ||
+    currency !== currency.toUpperCase()
+  ) {
+    invalid(
+      path,
+      "a normalized uppercase CommerceXL currency of at most 12 characters",
+      value,
+    );
+  }
+  return currency;
 }
 
 function readJsonObject(

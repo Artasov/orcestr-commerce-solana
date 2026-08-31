@@ -85,7 +85,7 @@ Use the `provider`, `query-keys`, `hooks`, `wallet`, and `kit-inspector` subpath
 
 ## Build
 
-For local integration, build the source workspace first and set the consumer's `@orcestr/commerce-solana-core` and `@orcestr/commerce-solana-react` dependencies to their exact `file:../../orcestr-commerce-solana/frontend/packages/core` and `.../react` paths. Run the consumer's `npm install` before its dev server; do not use a global `npm link`. Restore `0.1.0` registry versions before a release commit.
+For local integration, build the source workspace first and set the consumer's `@orcestr/commerce-solana-core` and `@orcestr/commerce-solana-react` dependencies to their exact `file:../../orcestr-commerce-solana/frontend/packages/core` and `.../react` paths. Run the consumer's `npm install` before its dev server; do not use a global `npm link`. Restore `0.2.0` registry versions before a release commit.
 
 ```bash
 npm run typecheck

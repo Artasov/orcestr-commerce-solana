@@ -81,7 +81,7 @@ Callback кошелька не считается доказательством
 
 ## Сборка
 
-Для локальной интеграции сначала соберите source workspace, затем укажите в consumer точные зависимости `file:../../orcestr-commerce-solana/frontend/packages/core` и `file:../../orcestr-commerce-solana/frontend/packages/react`. Выполните `npm install` consumer-а до запуска dev server; глобальный `npm link` не используйте. Перед релизным коммитом верните registry-версии `0.1.0`.
+Для локальной интеграции сначала соберите source workspace, затем укажите в consumer точные зависимости `file:../../orcestr-commerce-solana/frontend/packages/core` и `file:../../orcestr-commerce-solana/frontend/packages/react`. Выполните `npm install` consumer-а до запуска dev server; глобальный `npm link` не используйте. Перед релизным коммитом верните registry-версии `0.2.0`.
 
 ```bash
 npm run typecheck
