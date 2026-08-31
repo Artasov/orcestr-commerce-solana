@@ -53,11 +53,18 @@ class SolanaApiErrorMapper:
                 "Solana service is temporarily unavailable.",
                 headers,
             )
-        if code == SolanaErrorCode.ISSUANCE_LIMIT_REACHED:
+        if code in {
+            SolanaErrorCode.ISSUANCE_LIMIT_REACHED,
+            SolanaErrorCode.CANDIDATE_LIMIT_REACHED,
+        }:
             return cls._response(
                 status.HTTP_409_CONFLICT,
                 code,
-                "This payment intent cannot issue more transactions.",
+                (
+                    "This payment intent cannot check more candidate signatures."
+                    if code == SolanaErrorCode.CANDIDATE_LIMIT_REACHED
+                    else "This payment intent cannot issue more transactions."
+                ),
                 headers,
             )
         if is_capability:

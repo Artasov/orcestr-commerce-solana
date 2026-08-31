@@ -13,8 +13,9 @@ endpoint; the verifier still accepts only a message issued for that intent and p
 cross-device QR, a worker may scan `getSignaturesForAddress(reference)`. A
 subscription can reduce latency but is never authoritative: HTTP backfill is still required
 after disconnects. Discovery is bounded by the oldest persisted `getLatestBlockhash` context slot
-and configured history page limits. The optional RPC block time and host clock are not pagination
-boundaries.
+and one reference request for the per-intent budget plus one overflow sentinel. It never follows a
+cursor. The optional RPC block time and host clock are not pagination boundaries. Overflow is review,
+not proof that an unmatched or terminal intent has no payment.
 
 ## Required checks
 
@@ -58,9 +59,11 @@ distinct finalized transfer is attached to the unchanged terminal CommerceXL pay
 bounded grace period. Persisted signatures are excluded from later passes, so one late transfer cannot
 hide another.
 
-Verifier calls are idempotent. Persisting evidence and asking CommerceXL to apply a verification
+Verifier effects are idempotent. Persisting evidence and asking CommerceXL to apply a verification
 result occurs under row locks and unique constraints so concurrent discovery, retries and event
-redelivery cannot execute a product twice.
+redelivery cannot execute a product twice. Resource use is idempotent too: an authenticated candidate
+is durably claimed before RPC, an exact duplicate consumes zero RPC, and each intent accepts at most
+16 unique candidate claims without a host-specific override.
 
 ## ORCESTR fixture
 

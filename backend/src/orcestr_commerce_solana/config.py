@@ -54,14 +54,15 @@ class SolanaCommerceConfig(BaseModel):
     issuance_safety_margin: timedelta = Field(default=timedelta(seconds=30), ge=timedelta(0), le=timedelta(minutes=5))
     max_active_capabilities: int = Field(default=3, ge=1, le=10)
     max_issuances_per_intent: int = Field(default=16, ge=1, le=100)
+    max_candidate_checks_per_intent: int = Field(default=16, ge=1, le=100)
     terminal_reconciliation_grace: timedelta = Field(
         default=timedelta(minutes=5),
         ge=timedelta(minutes=1),
         le=timedelta(hours=1),
     )
     max_reconciliation_batch: int = Field(default=100, ge=1, le=1000)
-    signature_page_size: int = Field(default=100, ge=1, le=1000)
-    max_signature_pages: int = Field(default=10, ge=1, le=100)
+    max_candidate_verifications_per_intent: int = Field(default=16, ge=1, le=64)
+    max_candidate_verifications_per_pass: int = Field(default=32, ge=1, le=256)
     enable_native_sol: bool = False
     enable_token_2022: bool = True
 
@@ -84,4 +85,8 @@ class SolanaCommerceConfig(BaseModel):
             raise ValueError("Configured cluster name and RPC genesis hash do not match.")
         if not self.enable_native_sol and not self.enable_token_2022:
             raise ValueError("At least one settlement asset kind must be enabled.")
+        if self.max_candidate_verifications_per_pass < self.max_candidate_verifications_per_intent:
+            raise ValueError(
+                "The reconciliation pass budget must cover at least one complete intent budget."
+            )
         return self

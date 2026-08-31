@@ -42,7 +42,7 @@ The default host wiring is intentionally small:
 
 - `SolanaApplicationService.build_default(...)` supplies authenticated checkout orchestration.
 - `SolanaFastApiRouterFactory` supplies typed routes; the host injects Orcestr Auth actor, ownership, and CSRF dependencies.
-- `create_sqlalchemy_reconciler(...)` supplies leased background reconciliation, DB-backed signature uniqueness, paginated reference scans, and safe expiry.
+- `create_sqlalchemy_reconciler(...)` supplies leased background reconciliation, DB-backed signature uniqueness, one bounded reference window, and safe expiry/quarantine.
 - `SolanaProviderRegistrationFactory` registers the provider explicitly in CommerceXL 0.3.2 or newer. Version 0.3.2 is the minimum because payment options carry the immutable order amount/currency snapshot and its state machine permits a provisional confirmed payment to expire after a complete final reference scan.
 
 `SolanaProviderDependencies` requires a host `SettlementPriceKeyResolver`. It must resolve a stable product/plan/pack code from the order; broad order kinds are intentionally not used as a pricing fallback. For products priced in the database in the same currency as the selected asset, use the recommended exact strategy:
@@ -59,6 +59,8 @@ quotes = OrderSnapshotSettlementQuoteProvider(
 The provider requires `order.currency == configured currency` for the exact validated asset option, converts the human decimal order amount with `SolanaAmountCodec`, rejects fractional precision instead of rounding, and validates positive u64 plus asset min/max bounds. Asset identity remains the validated option/mint; the display symbol is never a security input. Its immutable quote uses `source="order_snapshot"` and `rounding="exact"`. `FixedSettlementQuoteProvider` remains a separate strategy for intentionally precomputed raw prices keyed by `(resolved_price_key, asset_option_id)`; it is not the recommended catalogue-pricing path. A custom `RecipientResolver` supports either a Beauty treasury or host-verified P2P recipients without changing the verifier.
 
 Transaction issuance is bounded by `max_issuances_per_intent` (default 16) under the intent row lock. `expires_at` closes public payment actions. Before `reconcile_until`, reference reconciliation still settles an exact finalized transfer whose on-chain `block_time` is inside its immutable issuance acceptance window, and keeps exact confirmed evidence pending for finality. At or after that horizon, proof is fail-closed terminal evidence without a product effect. A transfer submitted outside the acceptance window, or one attached to an already cancelled/expired attempt, is also written to CommerceXL as terminal evidence and never grants the product.
+
+Authenticated candidate checks are durably limited to 16 unique signatures per intent; exact duplicates perform no immediate RPC. Automatic reference discovery verifies at most 16 candidates per intent and 32 per worker pass, reads one 17-entry window, and never paginates attacker-controlled history. Overflow moves an active payment to review or parks an already paid/terminal audit without changing its financial outcome.
 
 Detailed integration and security contracts are in [architecture](https://github.com/Artasov/orcestr-commerce-solana/blob/main/backend/docs/architecture.md), [host integration](https://github.com/Artasov/orcestr-commerce-solana/blob/main/backend/docs/integration.md), and [security](https://github.com/Artasov/orcestr-commerce-solana/blob/main/backend/docs/security.md).
 

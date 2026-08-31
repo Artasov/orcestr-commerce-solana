@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -17,6 +18,7 @@ from orcestr_commerce_solana.config import SolanaCommerceConfig
 from orcestr_commerce_solana.errors import SolanaCommerceError, SolanaErrorCode
 from orcestr_commerce_solana.models import (
     SolanaIntentCapabilityORM,
+    SolanaPaymentEventORM,
     SolanaPaymentIntentORM,
     SolanaTransactionIssuanceORM,
 )
@@ -63,6 +65,16 @@ class CapabilityIntent(BaseModel):
     settlement: SettlementSnapshot
     expires_at: datetime
     capability_expires_at: datetime
+
+
+class CandidateClaim(BaseModel):
+    """Reports whether one canonical signature acquired a durable RPC-check slot."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    intent_public_id: UUID
+    is_new: bool
+    has_issuances: bool
 
 
 class SolanaIntentRepository:
@@ -161,13 +173,15 @@ class SolanaIntentRepository:
             query = query.with_for_update()
         return (await session.execute(query)).scalar_one_or_none()
 
-    async def record_candidate(
+    async def claim_candidate(
         self,
         session: AsyncSession,
         payment_public_id: UUID,
         signature: str,
-    ) -> SolanaPaymentIntentORM:
-        """Stores an untrusted acceleration hint without changing financial state."""
+        *,
+        actor_key: str,
+    ) -> CandidateClaim:
+        """Claims one lifetime-bounded signature check under the locked intent row."""
         intent = await self.get_by_payment_public_id(session, payment_public_id, for_update=True)
         if intent is None:
             raise SolanaCommerceError(SolanaErrorCode.ASSET_NOT_FOUND, "Solana payment intent was not found.")
@@ -182,13 +196,62 @@ class SolanaIntentRepository:
             or database_utc_datetime(intent.expires_at) <= self.clock.now()
         ):
             raise SolanaCommerceError(SolanaErrorCode.INTENT_EXPIRED, "Solana payment intent no longer accepts candidates.")
-        if intent.candidate_signature == signature:
-            return intent
+        evidence_sha256 = hashlib.sha256(signature.encode("utf-8")).hexdigest()
+        event_type = "solana.payment.candidate_claimed"
+        existing = await session.scalar(
+            select(SolanaPaymentEventORM.id).where(
+                SolanaPaymentEventORM.intent_id == intent.id,
+                SolanaPaymentEventORM.event_type == event_type,
+                SolanaPaymentEventORM.evidence_sha256 == evidence_sha256,
+            )
+        )
+        if existing is not None:
+            return CandidateClaim(
+                intent_public_id=intent.public_id,
+                is_new=False,
+                has_issuances=False,
+            )
+        now = self.clock.now()
+        claimed_count = int(
+            await session.scalar(
+                select(func.count(SolanaPaymentEventORM.id)).where(
+                    SolanaPaymentEventORM.intent_id == intent.id,
+                    SolanaPaymentEventORM.event_type == event_type,
+                )
+            )
+            or 0
+        )
+        if claimed_count >= self.config.max_candidate_checks_per_intent:
+            raise SolanaCommerceError(
+                SolanaErrorCode.CANDIDATE_LIMIT_REACHED,
+                "Solana payment intent cannot check more candidate signatures.",
+            )
         intent.candidate_signature = signature
-        intent.next_check_at = self.clock.now()
-        intent.updated_at = self.clock.now()
+        intent.next_check_at = now
+        intent.revision += 1
+        intent.updated_at = now
+        session.add(
+            SolanaPaymentEventORM(
+                event_id=uuid4(),
+                intent_id=intent.id,
+                revision=intent.revision,
+                event_type=event_type,
+                previous_state=intent.state,
+                next_state=intent.state,
+                reason_code=None,
+                evidence_sha256=evidence_sha256,
+                actor_key=actor_key,
+                metadata_json={"rpc_check_claimed": True},
+                occurred_at=now,
+            )
+        )
         await session.flush()
-        return intent
+        issuance_count = await self.count_issuances(session, intent.id)
+        return CandidateClaim(
+            intent_public_id=intent.public_id,
+            is_new=True,
+            has_issuances=issuance_count > 0,
+        )
 
     async def record_cancel_request(
         self,

@@ -35,6 +35,7 @@ class FakeReconciliationStore:
         self.finished_terminal: list[object] = []
         self.duplicate_payments: list[VerificationResult] = []
         self.finished_paid: list[object] = []
+        self.quarantined: list[tuple[object, str]] = []
 
     async def list_pending(self, *, limit: int, now) -> tuple[ReconciliationIntent, ...]:
         _ = now
@@ -70,6 +71,9 @@ class FakeReconciliationStore:
 
     async def finish_paid_audit(self, intent_public_id) -> None:
         self.finished_paid.append(intent_public_id)
+
+    async def quarantine(self, intent_public_id, reason_code: str) -> None:
+        self.quarantined.append((intent_public_id, reason_code))
 
 
 class FakeVerifier:
@@ -130,10 +134,9 @@ class PagedHistoryRpc(FakeRpc):
 
     async def get_signatures_for_address(self, address, *, before=None, limit=100, commitment=None):
         _ = address
-        _ = limit
         _ = commitment
         self.seen_before.append(before)
-        return self.pages.get(before, ())
+        return self.pages.get(before, ())[:limit]
 
 
 class TestSolanaReconciler:
@@ -286,13 +289,7 @@ class TestSolanaReconciler:
         assert store.retries == []
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "disposition",
-        (
-            VerificationDisposition.UNKNOWN,
-            VerificationDisposition.OBSERVED,
-        ),
-    )
+    @pytest.mark.parametrize("disposition", (VerificationDisposition.UNKNOWN, VerificationDisposition.OBSERVED))
     async def test_unverified_reference_result_does_not_extend_public_expiry(
         self,
         now,
@@ -327,9 +324,179 @@ class TestSolanaReconciler:
             store,
         ).reconcile_pending(limit=10, now=now)
 
-        assert store.expired == [intent.public_id]
-        assert store.retries == []
+        if disposition == VerificationDisposition.UNKNOWN:
+            assert store.expired == []
+            assert store.retries == ["transaction_not_found"]
+        else:
+            assert store.expired == [intent.public_id]
+            assert store.retries == []
         assert store.terminal_evidence == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "provisional_disposition",
+        (VerificationDisposition.OBSERVED, VerificationDisposition.CONFIRMED),
+    )
+    async def test_unknown_cannot_be_masked_when_expiry_is_terminal(
+        self,
+        now,
+        native_settlement,
+        provisional_disposition,
+    ) -> None:
+        unknown_signature = str(Signature.new_unique())
+        provisional_signature = str(Signature.new_unique())
+        issuance = self._issuance(now - timedelta(minutes=20))
+        intent = ReconciliationIntent(
+            public_id=uuid4(),
+            settlement=native_settlement,
+            issuances=(issuance,),
+            expires_at=now - timedelta(minutes=5),
+            reconcile_until=now - timedelta(seconds=1),
+        )
+        rpc = FakeRpc()
+        rpc.history = (
+            RpcSignatureInfo(signature=unknown_signature, slot=11, block_time=now),
+            RpcSignatureInfo(signature=provisional_signature, slot=10, block_time=now),
+        )
+        unknown = VerificationResult(
+            disposition=VerificationDisposition.UNKNOWN,
+            reason_code="rpc_temporarily_unavailable",
+            retryable=True,
+        )
+        provisional = (
+            self._transfer_result(
+                provisional_signature,
+                native_settlement,
+                now,
+                VerificationDisposition.CONFIRMED,
+            ).model_copy(update={"retryable": True, "reason_code": "transaction_not_final"})
+            if provisional_disposition == VerificationDisposition.CONFIRMED
+            else VerificationResult(
+                disposition=VerificationDisposition.OBSERVED,
+                reason_code="transaction_not_final",
+                retryable=True,
+            )
+        )
+        store = FakeReconciliationStore((intent,))
+
+        await SolanaReconciler(
+            rpc,
+            FakeVerifier(
+                {
+                    unknown_signature: unknown,
+                    provisional_signature: provisional,
+                }
+            ),
+            store,
+        ).reconcile_pending(limit=10, now=now)
+
+        assert store.expired == []
+        assert store.finished_terminal == []
+        assert store.retries == ["rpc_temporarily_unavailable"]
+
+    @pytest.mark.asyncio
+    async def test_exact_match_settles_after_expiry_even_when_another_candidate_is_unknown(
+        self,
+        now,
+        native_settlement,
+    ) -> None:
+        unknown_signature = str(Signature.new_unique())
+        match_signature = str(Signature.new_unique())
+        issuance = self._issuance(now - timedelta(minutes=20))
+        intent = ReconciliationIntent(
+            public_id=uuid4(),
+            settlement=native_settlement,
+            issuances=(issuance,),
+            expires_at=now - timedelta(seconds=1),
+            reconcile_until=now + timedelta(minutes=4),
+        )
+        rpc = FakeRpc()
+        rpc.history = (
+            RpcSignatureInfo(signature=unknown_signature, slot=11, block_time=now),
+            RpcSignatureInfo(signature=match_signature, slot=10, block_time=now),
+        )
+        unknown = VerificationResult(
+            disposition=VerificationDisposition.UNKNOWN,
+            reason_code="rpc_temporarily_unavailable",
+            retryable=True,
+        )
+        match = self._transfer_result(
+            match_signature,
+            native_settlement,
+            issuance.accepts_until - timedelta(seconds=1),
+            VerificationDisposition.MATCH,
+        )
+        store = FakeReconciliationStore((intent,))
+
+        await SolanaReconciler(
+            rpc,
+            FakeVerifier({unknown_signature: unknown, match_signature: match}),
+            store,
+        ).reconcile_pending(limit=10, now=now)
+
+        assert store.applied == [match]
+        assert store.expired == []
+        assert store.retries == []
+
+    @pytest.mark.asyncio
+    async def test_unknown_does_not_consume_late_evidence_before_terminal_retry(
+        self,
+        now,
+        native_settlement,
+    ) -> None:
+        late_signature = str(Signature.new_unique())
+        unknown_signature = str(Signature.new_unique())
+        issuance = self._issuance(now - timedelta(minutes=20))
+        intent = ReconciliationIntent(
+            public_id=uuid4(),
+            settlement=native_settlement,
+            issuances=(issuance,),
+            expires_at=now - timedelta(seconds=1),
+            reconcile_until=now + timedelta(minutes=4),
+        )
+        late_match = self._transfer_result(
+            late_signature,
+            native_settlement,
+            now,
+            VerificationDisposition.MATCH,
+        )
+        late_review = VerificationResult(
+            disposition=VerificationDisposition.REVIEW,
+            reason_code=SolanaErrorCode.LATE_PAYMENT.value,
+            commitment=SolanaCommitment.FINALIZED,
+            transfer=late_match.transfer,
+        )
+        unknown = VerificationResult(
+            disposition=VerificationDisposition.UNKNOWN,
+            reason_code="rpc_temporarily_unavailable",
+            retryable=True,
+        )
+        rpc = FakeRpc()
+        rpc.history = (
+            RpcSignatureInfo(signature=late_signature, slot=11, block_time=now),
+            RpcSignatureInfo(signature=unknown_signature, slot=10, block_time=now),
+        )
+        store = FakeReconciliationStore((intent,))
+
+        await SolanaReconciler(
+            rpc,
+            FakeVerifier({late_signature: late_review, unknown_signature: unknown}),
+            store,
+        ).reconcile_pending(limit=10, now=now)
+
+        assert store.attempts == []
+        assert store.expired == []
+        assert store.retries == ["rpc_temporarily_unavailable"]
+
+        rpc.history = (RpcSignatureInfo(signature=late_signature, slot=11, block_time=now),)
+        await SolanaReconciler(
+            rpc,
+            FakeVerifier({late_signature: late_review}),
+            store,
+        ).reconcile_pending(limit=10, now=now)
+
+        assert store.expired == [intent.public_id]
+        assert store.terminal_evidence == [late_review]
 
     @pytest.mark.asyncio
     async def test_on_time_confirmed_payment_waits_for_finality_after_public_expiry(
@@ -691,8 +858,75 @@ class TestSolanaReconciler:
             store,
         ).reconcile_pending(limit=10, now=now)
 
-        assert store.finished_terminal == [intent.public_id]
-        assert store.retries == []
+        if disposition == VerificationDisposition.UNKNOWN:
+            assert store.finished_terminal == []
+            assert store.retries == ["transaction_not_final"]
+        else:
+            assert store.finished_terminal == [intent.public_id]
+            assert store.retries == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("state", "finished_attribute"),
+        (
+            (SolanaIntentState.EXPIRED, "finished_terminal"),
+            (SolanaIntentState.PAID, "finished_paid"),
+        ),
+    )
+    async def test_unknown_cannot_be_masked_when_finishing_existing_audit(
+        self,
+        now,
+        native_settlement,
+        state,
+        finished_attribute,
+    ) -> None:
+        unknown_signature = str(Signature.new_unique())
+        confirmed_signature = str(Signature.new_unique())
+        issuance = self._issuance(now - timedelta(minutes=20))
+        intent = ReconciliationIntent(
+            public_id=uuid4(),
+            state=state,
+            settlement=native_settlement,
+            issuances=(issuance,),
+            verified_signature=(
+                str(Signature.new_unique())
+                if state == SolanaIntentState.PAID
+                else None
+            ),
+            expires_at=now - timedelta(minutes=5),
+            reconcile_until=now - timedelta(seconds=1),
+        )
+        rpc = FakeRpc()
+        rpc.history = (
+            RpcSignatureInfo(signature=unknown_signature, slot=11, block_time=now),
+            RpcSignatureInfo(signature=confirmed_signature, slot=10, block_time=now),
+        )
+        unknown = VerificationResult(
+            disposition=VerificationDisposition.UNKNOWN,
+            reason_code="rpc_temporarily_unavailable",
+            retryable=True,
+        )
+        confirmed = self._transfer_result(
+            confirmed_signature,
+            native_settlement,
+            now,
+            VerificationDisposition.CONFIRMED,
+        ).model_copy(update={"retryable": True, "reason_code": "transaction_not_final"})
+        store = FakeReconciliationStore((intent,))
+
+        await SolanaReconciler(
+            rpc,
+            FakeVerifier(
+                {
+                    unknown_signature: unknown,
+                    confirmed_signature: confirmed,
+                }
+            ),
+            store,
+        ).reconcile_pending(limit=10, now=now)
+
+        assert getattr(store, finished_attribute) == []
+        assert store.retries == ["rpc_temporarily_unavailable"]
 
     @pytest.mark.asyncio
     async def test_paid_audit_records_second_finalized_payment_without_reapplying_primary(
@@ -850,29 +1084,21 @@ class TestSolanaReconciler:
         assert stats.expired == 1
 
     @pytest.mark.asyncio
-    async def test_paginated_scan_reaches_valid_signature_after_full_spam_page(
+    async def test_reference_overflow_is_quarantined_after_one_bounded_window(
         self,
         now,
         native_settlement,
     ) -> None:
-        spam = [str(Signature.new_unique()) for _ in range(3)]
-        valid = str(Signature.new_unique())
-        old = str(Signature.new_unique())
+        spam = [str(Signature.new_unique()) for _ in range(17)]
         issuance = self._issuance(now - timedelta(minutes=5))
-        pages = {
-            None: (
-                RpcSignatureInfo(signature=spam[0], slot=50, block_time=now),
-                RpcSignatureInfo(signature=spam[1], slot=49, block_time=now - timedelta(seconds=1)),
-            ),
-            spam[1]: (
-                RpcSignatureInfo(signature=spam[2], slot=48, block_time=now - timedelta(seconds=2)),
-                RpcSignatureInfo(signature=valid, slot=47, block_time=now - timedelta(seconds=3)),
-            ),
-            valid: (
-                RpcSignatureInfo(signature=old, slot=1, block_time=issuance.issued_at - timedelta(seconds=1)),
-            ),
-        }
-        rpc = PagedHistoryRpc(pages)
+        rpc = PagedHistoryRpc(
+            {
+                None: tuple(
+                    RpcSignatureInfo(signature=signature, slot=50 - index, block_time=now)
+                    for index, signature in enumerate(spam)
+                )
+            }
+        )
         intent = ReconciliationIntent(
             public_id=uuid4(),
             settlement=native_settlement,
@@ -884,47 +1110,38 @@ class TestSolanaReconciler:
             disposition=VerificationDisposition.REVIEW,
             reason_code="issuance_mismatch",
         )
-        match = self._transfer_result(
-            valid,
-            native_settlement,
-            issuance.accepts_until - timedelta(seconds=1),
-            VerificationDisposition.MATCH,
-        )
-        verifier = FakeVerifier({**{signature: mismatch for signature in spam}, valid: match})
+        verifier = FakeVerifier({signature: mismatch for signature in spam})
         store = FakeReconciliationStore((intent,))
 
-        await SolanaReconciler(
+        stats = await SolanaReconciler(
             rpc,
             verifier,
             store,
-            signature_page_size=2,
-            max_signature_pages=3,
         ).reconcile_pending(limit=10, now=now)
 
-        assert rpc.seen_before == [None, spam[1], valid]
-        assert verifier.seen == [*spam, valid]
-        assert store.applied == [match]
+        assert rpc.seen_before == [None]
+        assert verifier.prepared == spam[:16]
+        assert store.quarantined == [
+            (intent.public_id, "reference_candidate_budget_exceeded")
+        ]
         assert store.expired == []
         assert store.terminal_evidence == []
+        assert stats.quarantined == 1
 
     @pytest.mark.asyncio
-    async def test_exact_finalized_match_is_not_starved_by_incomplete_reference_scan(
+    async def test_direct_exact_match_has_priority_over_reference_overflow(
         self,
         now,
         native_settlement,
     ) -> None:
         valid = str(Signature.new_unique())
-        spam = str(Signature.new_unique())
+        spam = [str(Signature.new_unique()) for _ in range(17)]
         issuance = self._issuance(now - timedelta(minutes=5))
         rpc = PagedHistoryRpc(
             {
-                None: (
-                    RpcSignatureInfo(
-                        signature=valid,
-                        slot=50,
-                        block_time=issuance.accepts_until - timedelta(seconds=1),
-                    ),
-                    RpcSignatureInfo(signature=spam, slot=49, block_time=now),
+                None: tuple(
+                    RpcSignatureInfo(signature=signature, slot=50 - index, block_time=now)
+                    for index, signature in enumerate(spam)
                 ),
             },
         )
@@ -932,7 +1149,8 @@ class TestSolanaReconciler:
             public_id=uuid4(),
             settlement=native_settlement,
             issuances=(issuance,),
-            expires_at=now - timedelta(seconds=1),
+            candidate_signatures=(valid,),
+            expires_at=now + timedelta(minutes=1),
             reconcile_until=now + timedelta(minutes=4),
         )
         mismatch = VerificationResult(
@@ -947,18 +1165,180 @@ class TestSolanaReconciler:
         )
         store = FakeReconciliationStore((intent,))
 
+        verifier = FakeVerifier({valid: match, **{signature: mismatch for signature in spam}})
         stats = await SolanaReconciler(
             rpc,
-            FakeVerifier({valid: match, spam: mismatch}),
+            verifier,
             store,
-            signature_page_size=2,
-            max_signature_pages=1,
         ).reconcile_pending(limit=10, now=now)
 
+        assert verifier.prepared == [valid]
         assert store.applied == [match]
         assert store.expired == []
         assert store.retries == []
+        assert store.quarantined == []
         assert stats.applied == 1
+
+    @pytest.mark.asyncio
+    async def test_unknown_inside_overflow_retries_without_quarantine(
+        self,
+        now,
+        native_settlement,
+    ) -> None:
+        signatures = [str(Signature.new_unique()) for _ in range(17)]
+        issuance = self._issuance(now - timedelta(minutes=5))
+        rpc = FakeRpc()
+        rpc.history = tuple(
+            RpcSignatureInfo(signature=signature, slot=50 - index, block_time=now)
+            for index, signature in enumerate(signatures)
+        )
+        unknown = VerificationResult(
+            disposition=VerificationDisposition.UNKNOWN,
+            reason_code="rpc_temporarily_unavailable",
+            retryable=True,
+        )
+        mismatch = VerificationResult(
+            disposition=VerificationDisposition.REVIEW,
+            reason_code="issuance_mismatch",
+        )
+        verifier = FakeVerifier(
+            {signatures[0]: unknown, **{signature: mismatch for signature in signatures[1:]}},
+        )
+        intent = ReconciliationIntent(
+            public_id=uuid4(),
+            settlement=native_settlement,
+            issuances=(issuance,),
+            expires_at=now + timedelta(minutes=1),
+            reconcile_until=now + timedelta(minutes=4),
+        )
+        store = FakeReconciliationStore((intent,))
+
+        await SolanaReconciler(rpc, verifier, store).reconcile_pending(limit=10, now=now)
+
+        assert len(verifier.prepared) == 16
+        assert store.retries == ["rpc_temporarily_unavailable"]
+        assert store.quarantined == []
+        assert store.expired == []
+
+    @pytest.mark.asyncio
+    async def test_exact_budget_with_lower_slot_can_expire_deterministically(
+        self,
+        now,
+        native_settlement,
+    ) -> None:
+        signatures = [str(Signature.new_unique()) for _ in range(16)]
+        old_signature = str(Signature.new_unique())
+        issuance = self._issuance(now - timedelta(minutes=20))
+        rpc = FakeRpc()
+        rpc.history = (
+            *tuple(
+                RpcSignatureInfo(signature=signature, slot=50 - index, block_time=now)
+                for index, signature in enumerate(signatures)
+            ),
+            RpcSignatureInfo(signature=old_signature, slot=4, block_time=now),
+        )
+        mismatch = VerificationResult(
+            disposition=VerificationDisposition.REVIEW,
+            reason_code="issuance_mismatch",
+        )
+        verifier = FakeVerifier({signature: mismatch for signature in signatures})
+        intent = ReconciliationIntent(
+            public_id=uuid4(),
+            settlement=native_settlement,
+            issuances=(issuance,),
+            expires_at=now - timedelta(seconds=1),
+            reconcile_until=now + timedelta(minutes=4),
+        )
+        store = FakeReconciliationStore((intent,))
+
+        await SolanaReconciler(rpc, verifier, store).reconcile_pending(limit=10, now=now)
+
+        assert verifier.prepared == signatures
+        assert store.expired == [intent.public_id]
+        assert store.quarantined == []
+
+    @pytest.mark.asyncio
+    async def test_global_prepare_budget_defers_whole_remaining_intents(
+        self,
+        now,
+        native_settlement,
+    ) -> None:
+        signature_groups = [
+            (str(Signature.new_unique()), str(Signature.new_unique()))
+            for _ in range(3)
+        ]
+        intents = tuple(
+            ReconciliationIntent(
+                public_id=uuid4(),
+                settlement=native_settlement,
+                issuances=(self._issuance(now),),
+                candidate_signatures=signatures,
+                expires_at=now + timedelta(minutes=1),
+                reconcile_until=now + timedelta(minutes=4),
+            )
+            for signatures in signature_groups
+        )
+        mismatch = VerificationResult(
+            disposition=VerificationDisposition.REVIEW,
+            reason_code="issuance_mismatch",
+        )
+        verifier = FakeVerifier(
+            {
+                signature: mismatch
+                for signatures in signature_groups
+                for signature in signatures
+            }
+        )
+        store = FakeReconciliationStore(intents)
+
+        await SolanaReconciler(
+            FakeRpc(),
+            verifier,
+            store,
+            max_candidate_verifications_per_intent=2,
+            max_candidate_verifications_per_pass=4,
+        ).reconcile_pending(limit=10, now=now)
+
+        assert verifier.prepared == [*signature_groups[0], *signature_groups[1]]
+        assert store.retries == [
+            None,
+            None,
+            "candidate_verification_global_budget_exhausted",
+        ]
+        assert store.quarantined == []
+
+    @pytest.mark.asyncio
+    async def test_candidate_also_found_by_reference_consumes_one_prepare(
+        self,
+        now,
+        native_settlement,
+    ) -> None:
+        signature = str(Signature.new_unique())
+        issuance = self._issuance(now)
+        intent = ReconciliationIntent(
+            public_id=uuid4(),
+            state=SolanaIntentState.EXPIRED,
+            settlement=native_settlement,
+            issuances=(issuance,),
+            candidate_signatures=(signature,),
+            expires_at=now - timedelta(minutes=1),
+            reconcile_until=now + timedelta(minutes=4),
+        )
+        rpc = FakeRpc()
+        rpc.history = (RpcSignatureInfo(signature=signature, slot=10, block_time=now),)
+        match = self._transfer_result(
+            signature,
+            native_settlement,
+            now,
+            VerificationDisposition.MATCH,
+        )
+        verifier = FakeVerifier({signature: match})
+        store = FakeReconciliationStore((intent,))
+
+        await SolanaReconciler(rpc, verifier, store).reconcile_pending(limit=10, now=now)
+
+        assert verifier.prepared == [signature]
+        assert store.terminal_evidence == [match]
 
     @staticmethod
     def _issuance(now) -> TransactionIssuanceSnapshot:

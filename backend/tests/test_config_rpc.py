@@ -69,6 +69,16 @@ class TestSolanaConfig:
         (
             {"max_issuances_per_intent": 0},
             {"max_issuances_per_intent": 101},
+            {"max_candidate_checks_per_intent": 0},
+            {"max_candidate_checks_per_intent": 101},
+            {"max_candidate_verifications_per_intent": 0},
+            {"max_candidate_verifications_per_intent": 65},
+            {"max_candidate_verifications_per_pass": 0},
+            {"max_candidate_verifications_per_pass": 257},
+            {
+                "max_candidate_verifications_per_intent": 16,
+                "max_candidate_verifications_per_pass": 15,
+            },
             {"terminal_reconciliation_grace": timedelta(seconds=59)},
             {"terminal_reconciliation_grace": timedelta(hours=1, seconds=1)},
         ),

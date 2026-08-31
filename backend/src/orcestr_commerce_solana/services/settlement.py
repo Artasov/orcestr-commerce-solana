@@ -340,6 +340,67 @@ class SolanaSettlementService:
         )
         await session.flush()
 
+    async def quarantine(
+        self,
+        session: AsyncSession,
+        intent: SolanaPaymentIntentORM,
+        reason_code: str,
+    ) -> None:
+        """Parks a poisoned reference history without changing paid/terminal outcomes."""
+
+        supported_states = {
+            SolanaIntentState.WAITING.value,
+            SolanaIntentState.OBSERVED.value,
+            SolanaIntentState.CONFIRMED.value,
+            SolanaIntentState.PAID.value,
+            SolanaIntentState.CANCELLED.value,
+            SolanaIntentState.EXPIRED.value,
+        }
+        if intent.state not in supported_states:
+            return
+        if intent.reason_code == reason_code and intent.next_check_at is None:
+            return
+        now = self.clock.now()
+        previous_state = intent.state
+        is_active = previous_state in {
+            SolanaIntentState.WAITING.value,
+            SolanaIntentState.OBSERVED.value,
+            SolanaIntentState.CONFIRMED.value,
+        }
+        next_state = SolanaIntentState.REVIEW.value if is_active else previous_state
+        intent.state = next_state
+        intent.reason_code = reason_code
+        intent.next_check_at = None
+        intent.revision += 1
+        intent.updated_at = now
+        if is_active:
+            await self._revoke_capabilities(session, intent.id, now)
+        session.add(
+            SolanaPaymentEventORM(
+                event_id=uuid4(),
+                intent_id=intent.id,
+                revision=intent.revision,
+                event_type="solana.payment.reference_scan_quarantined",
+                previous_state=previous_state,
+                next_state=next_state,
+                reason_code=reason_code,
+                evidence_sha256=None,
+                actor_key=None,
+                metadata_json={"product_effect": False},
+                occurred_at=now,
+            )
+        )
+        if is_active:
+            await self.payment_runtime.apply_verification(
+                session,
+                intent.payment_id,
+                PaymentVerificationResult(
+                    state=PaymentState.REVIEW,
+                    reason_code=reason_code,
+                ),
+            )
+        await session.flush()
+
     @staticmethod
     async def _revoke_capabilities(session: AsyncSession, intent_id: int, now: datetime) -> None:
         """Closes every bearer once any chain observation is applied."""

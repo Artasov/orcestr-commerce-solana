@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "orcestr-commerce-solana"
-version = "0.2.1"
+version = "0.2.2"
 description = "Non-custodial native SOL and Token-2022 payments for CommerceXL."
 readme = "README.md"
 requires-python = ">=3.12,<3.15"

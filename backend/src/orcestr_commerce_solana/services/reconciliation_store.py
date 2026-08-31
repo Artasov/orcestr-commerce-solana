@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from orcestr_commerce_solana.clock import Clock, database_utc_datetime
 from orcestr_commerce_solana.config import SolanaCommerceConfig
 from orcestr_commerce_solana.models import (
+    SolanaPaymentEventORM,
     SolanaPaymentIntentORM,
     SolanaTransactionIssuanceORM,
     SolanaTransferORM,
@@ -175,6 +176,8 @@ class SqlAlchemyReconciliationStore:
                 self.paid_audit_state,
             }:
                 return
+            if await self._is_reference_quarantined(session, intent.id):
+                return
             intent.next_check_at = self.clock.now() + self.retry_delay
             intent.updated_at = self.clock.now()
 
@@ -183,6 +186,8 @@ class SqlAlchemyReconciliationStore:
         async with self.session_factory() as session, session.begin():
             intent = await self._get_locked(session, intent_public_id)
             if intent is None or intent.state not in self.terminal_states:
+                return False
+            if await self._is_reference_quarantined(session, intent.id):
                 return False
             recorded = await self.settlement.record_terminal_evidence(session, intent, result)
             now = self.clock.now()
@@ -232,6 +237,15 @@ class SqlAlchemyReconciliationStore:
             intent.next_check_at = None
             intent.updated_at = self.clock.now()
 
+    async def quarantine(self, intent_public_id: UUID, reason_code: str) -> None:
+        """Persists one durable manual-review boundary for reference-history overflow."""
+
+        async with self.session_factory() as session, session.begin():
+            intent = await self._get_locked(session, intent_public_id)
+            if intent is None:
+                return
+            await self.settlement.quarantine(session, intent, reason_code)
+
     async def expire(self, intent_public_id: UUID) -> None:
         """Expires only unmatched states; confirmed evidence must reach another verdict."""
         async with self.session_factory() as session, session.begin():
@@ -273,6 +287,21 @@ class SqlAlchemyReconciliationStore:
         return (await session.execute(query)).scalar_one_or_none()
 
     @staticmethod
+    async def _is_reference_quarantined(session: AsyncSession, intent_id: int) -> bool:
+        """Uses the append-only event as a durable stale-worker fence."""
+
+        event_id = await session.scalar(
+            select(SolanaPaymentEventORM.id)
+            .where(
+                SolanaPaymentEventORM.intent_id == intent_id,
+                SolanaPaymentEventORM.event_type
+                == "solana.payment.reference_scan_quarantined",
+            )
+            .limit(1)
+        )
+        return event_id is not None
+
+    @staticmethod
     def _issuance_snapshot(issuance: SolanaTransactionIssuanceORM) -> TransactionIssuanceSnapshot:
         return TransactionIssuanceSnapshot(
             public_id=issuance.public_id,
@@ -312,6 +341,10 @@ def create_sqlalchemy_reconciler(
         rpc,
         verifier,
         store,
-        signature_page_size=config.signature_page_size,
-        max_signature_pages=config.max_signature_pages,
+        max_candidate_verifications_per_intent=(
+            config.max_candidate_verifications_per_intent
+        ),
+        max_candidate_verifications_per_pass=(
+            config.max_candidate_verifications_per_pass
+        ),
     )
