@@ -2,6 +2,13 @@
 
 All notable changes to Orcestr Commerce Solana are documented in this file.
 
+## 0.2.1 - 2026-08-31
+
+- Settle an exact finalized transfer submitted within its issuance acceptance window when reference reconciliation discovers it after public intent expiry but before the immutable reconciliation horizon.
+- Keep exact confirmed evidence pending for finality after public expiry, bounded by the immutable reconciliation horizon.
+- Prevent an incomplete reference-history scan from starving an already verified finalized match.
+- Preserve fail-closed terminal evidence without product effects when final proof arrives at or after the reconciliation horizon.
+
 ## 0.2.0 - 2026-08-31
 
 - Add an exact order-snapshot quote strategy for CommerceXL database prices denominated in the selected Solana asset.
