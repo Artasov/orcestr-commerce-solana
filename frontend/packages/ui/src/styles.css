@@ -1,0 +1,194 @@
+.ocs-checkout {
+  width: min(100%, 760px);
+}
+
+.ocs-checkout-header,
+.ocs-wallet-choice,
+.ocs-wallet-identity,
+.ocs-asset-option-title,
+.ocs-detail dd {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ocs-checkout-header,
+.ocs-wallet-choice {
+  justify-content: space-between;
+}
+
+.ocs-checkout-header h2,
+.ocs-checkout-header p {
+  margin: 0;
+}
+
+.ocs-checkout-header p {
+  margin-top: 0.25rem;
+}
+
+.ocs-checkout-grid {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.ocs-checkout-qr,
+.ocs-qr-loading {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+}
+
+.ocs-qr {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.75rem;
+}
+
+.ocs-checkout-details {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+
+.ocs-detail {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.ocs-detail dt {
+  color: var(--oui-text-muted, #64748b);
+  font-size: 0.75rem;
+}
+
+.ocs-detail dd {
+  justify-content: space-between;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ocs-detail[data-prominent="true"] dd {
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.ocs-checkout-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.ocs-state-retry {
+  appearance: none;
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.ocs-state-retry:focus-visible,
+.ocs-asset-option:has(input:focus-visible) {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.ocs-asset-selector {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ocs-asset-selector legend {
+  margin-bottom: 0.75rem;
+  font-weight: 700;
+}
+
+.ocs-asset-options {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.ocs-asset-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 0.75rem;
+  cursor: pointer;
+}
+
+.ocs-asset-option[data-selected="true"] {
+  border-color: currentColor;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.ocs-asset-option-main,
+.ocs-asset-option-amount {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.ocs-asset-option-amount {
+  text-align: right;
+}
+
+.ocs-wallet-choice {
+  padding: 0.75rem;
+}
+
+.ocs-wallet-choice[data-selected="true"] {
+  outline: 2px solid currentColor;
+}
+
+.ocs-wallet-identity img {
+  border-radius: 0.4rem;
+}
+
+.ocs-checkout-dialog {
+  width: min(92vw, 820px);
+}
+
+@media (max-width: 640px) {
+  .ocs-checkout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ocs-checkout-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .ocs-checkout-qr {
+    order: 2;
+  }
+
+  .ocs-asset-option {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .ocs-asset-option-amount {
+    grid-column: 2;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ocs-checkout *,
+  .ocs-checkout *::before,
+  .ocs-checkout *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,71 @@
+name: Repo update to Telegram
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      task:
+        description: What should Codex write about?
+        required: true
+        type: string
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: Artasov/orcestr-repo-notifier@b0b4cc79e0e5dbd75f29c528dc4047ed2e75b251 # v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          telegram-bot-token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          telegram-chat-id: '@orcestrdev'
+          telegram-message-thread-id: '2'
+          telegram-parse-mode: HTML
+          custom-task: ${{ github.event.inputs.task }}
+          mode: product
+          language: en
+          model: gpt-5.6-luna
+          effort: medium
+          custom-prompt: |
+            Write in English.
+            Return only the final Telegram message text. Do not explain the format.
+            These rules apply to automatic push updates and manual workflow tasks.
+            Automatic updates should cover meaningful Orcestr Commerce Solana package, payment, verification, integration, documentation, release, or workflow progress.
+            For automatic push updates, output exactly ORCESTR_NOTIFY_SKIP only when the entire push is formatting-only: import sorting, whitespace cleanup, generated file reformatting, or equivalent mechanical cleanup without semantic, configuration, documentation, workflow, dependency, or behavior changes.
+            Do not skip meaningful CI/CD, release, packaging, dependency, documentation, security, payment-state, RPC, Token-2022, wallet, QR, reconciliation, localization, adapter, or contract changes.
+            If many changes are one repeated type of work, group them into one concise bullet.
+            Be concrete: name the affected package or layer, such as orcestr-commerce-solana for Python, @orcestr/commerce-solana-core, @orcestr/commerce-solana-react, or @orcestr/commerce-solana-ui.
+            For backend changes, name the verifier, transaction request, RPC client, asset registry, CommerceXL adapter, FastAPI route, SQLAlchemy model, reconciliation runtime, state transition, or evidence contract when the context proves it.
+            For frontend changes, name the API client, wallet-standard adapter, React Query hook, QR/deep link, checkout state, shared event invalidation, Orcestr UI component, or Russian/English dictionary when the context proves it.
+            If package.json, package-lock.json, pyproject.toml, uv.lock, peerDependencies, dependencies, exports, scripts, release workflows, tags, or package versions changed, mention the exact package and version changes visible in the diff.
+            Do not infer security, compatibility, or user-facing behavior that the diff does not prove.
+            Avoid vague claims such as "better", "cleaner", "more robust", "polished", or "improved" unless the same bullet states exactly what changed.
+            Use exactly this structure:
+            First line: DEV UPDATE <b>Orcestr Commerce Solana</b>:
+            For automatic push updates, second line: Stats: <commit_count> commits, +<added_lines>/-<deleted_lines> lines.
+            Use the exact commit count and line counts from the Change Stats section in context.
+            For manual workflow tasks, include the Stats line only if the task asks for change stats.
+            Then 3-5 bullet lines. Every bullet line must start with "• ".
+            Then one short closing line after a blank line.
+            After the closing line, always add exactly these two final link lines:
+            PyPI: https://pypi.org/project/orcestr-commerce-solana/
+            NPM: https://www.npmjs.com/org/orcestr
+            If the push contains a package release or version bump, make the first bullet start with "• New release:" and list every exact released package version visible in the diff.
+            The closing line may be a concise thank-you, a note for integrators, or a relevant invitation to try the packages. Vary it between updates.
+            Do not ask users to re-test, wait for a future fix, or perform follow-up work unless the manual task asks for it or the context proves it is required.
+            Do not write filler such as "No visible app behavior changed".
+            Do not use Markdown headings, code fences, numbered lists, or plain paragraph lines for update items.
+            Telegram HTML parse mode is enabled. Use <b>...</b> sparingly for the product name and 1-2 important package names or release versions.
+            Do not use unsupported HTML tags, colors, spans, inline styles, or raw angle-bracket placeholders.
+            Do not include repository owner, repository name, branch name, author name, commit hashes, raw file lists, compare links, or GitHub URLs.
+            Keep every bullet concise, factual, and readable in Telegram.

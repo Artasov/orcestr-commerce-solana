@@ -1,0 +1,78 @@
+{
+  "name": "@orcestr/commerce-solana-react",
+  "version": "0.1.0",
+  "description": "React Query hooks and Wallet Standard adapters for Orcestr Commerce Solana.",
+  "author": "Artasov",
+  "license": "MPL-2.0",
+  "keywords": [
+    "commerce",
+    "orcestr",
+    "react",
+    "solana",
+    "wallet-standard"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Artasov/orcestr-commerce-solana.git",
+    "directory": "frontend/packages/react"
+  },
+  "homepage": "https://github.com/Artasov/orcestr-commerce-solana/tree/main/frontend/packages/react#readme",
+  "bugs": {
+    "url": "https://github.com/Artasov/orcestr-commerce-solana/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "README.ru.md",
+    "TRADEMARKS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./provider": {
+      "types": "./dist/provider.d.ts",
+      "import": "./dist/provider.js"
+    },
+    "./query-keys": {
+      "types": "./dist/queryKeys.d.ts",
+      "import": "./dist/queryKeys.js"
+    },
+    "./hooks": {
+      "types": "./dist/hooks.d.ts",
+      "import": "./dist/hooks.js"
+    },
+    "./wallet": {
+      "types": "./dist/wallet.d.ts",
+      "import": "./dist/wallet.js"
+    },
+    "./kit-inspector": {
+      "types": "./dist/kitInspector.d.ts",
+      "import": "./dist/kitInspector.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@orcestr/commerce-solana-core": "0.1.0",
+    "@solana/kit": "8.2.0",
+    "@wallet-standard/core": "1.1.2",
+    "@solana/wallet-standard-features": "1.4.0"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.99.0",
+    "react": "^19.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -b --pretty false",
+    "build": "tsc -b",
+    "prepack": "node ../../scripts/sync-package-legal.mjs react && npm run build",
+    "pack:dry-run": "npm pack --dry-run"
+  }
+}

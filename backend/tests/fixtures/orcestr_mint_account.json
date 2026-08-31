@@ -1,0 +1,19 @@
+{
+  "address": "HztMC7xr2j6ngpfWbYsF5xnRZkgouDXQ5rVis3C3pump",
+  "captured_at_utc": "2026-08-31T01:26:42Z",
+  "source_rpc": "https://api.mainnet-beta.solana.com",
+  "context_slot": 443026239,
+  "cluster_genesis_hash": "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+  "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "lamports": 3758400,
+  "executable": false,
+  "rent_epoch": 18446744073709551615,
+  "data_base64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAApip9FfLdAgAGAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARIAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPyPKA2lLH7Pv7HPV/kfgfL44vp9H8dmjp2vj7bjeTlPEwCuAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/I8oDaUsfs+/sc9X+R+B8vji+n0fx2aOna+PtuN5OU8HAAAAT3JjZXN0cgcAAABPUkNFU1RSUAAAAGh0dHBzOi8vaXBmcy5pby9pcGZzL2JhZmtyZWljd3NjdWFvdTNja2lvazVxZ29kemV5YWI3YmFyemtsc2puZGF4eDZxM255eG5xNTRuam51AAAAAA==",
+  "expected": {
+    "decimals": 6,
+    "mint_authority": null,
+    "freeze_authority": null,
+    "extension_ids": [18, 19],
+    "account_data_sha256": "e1dba19cd4deabf0a5bdef381d805bf4d114e9c4951fece6b9912e1102d889df"
+  }
+}

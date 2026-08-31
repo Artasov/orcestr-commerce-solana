@@ -1,0 +1,82 @@
+name: Orcestr Commerce Solana quality checks
+run-name: Orcestr Commerce Solana quality checks - ${{ github.ref_name }}
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-tests:
+    name: Python tests (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - '3.12'
+          - '3.13'
+          - '3.14'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Install dependencies
+        run: uv sync --frozen --python ${{ matrix.python-version }}
+        working-directory: backend
+      - name: Run tests
+        run: uv run --python ${{ matrix.python-version }} pytest -q
+        working-directory: backend
+
+  backend:
+    name: Python package
+    needs: backend-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Build wheel and sdist
+        run: uv build
+        working-directory: backend
+      - name: Audit dependencies
+        run: |
+          uv export --frozen --no-dev --no-emit-project --quiet --output-file requirements-audit.txt
+          uvx pip-audit --strict --disable-pip --requirement requirements-audit.txt
+        working-directory: backend
+
+  frontend:
+    name: Frontend packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+      - name: Test and build packages
+        run: npm test
+        working-directory: frontend
+      - name: Inspect npm package contents
+        run: npm run pack:dry-run
+        working-directory: frontend
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: frontend
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

@@ -1,0 +1,63 @@
+{
+  "name": "@orcestr/commerce-solana-ui",
+  "version": "0.1.0",
+  "description": "Accessible Token-2022 checkout components for Orcestr Commerce Solana.",
+  "author": "Artasov",
+  "license": "MPL-2.0",
+  "keywords": [
+    "commerce",
+    "orcestr",
+    "qr-code",
+    "solana",
+    "token-2022"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Artasov/orcestr-commerce-solana.git",
+    "directory": "frontend/packages/ui"
+  },
+  "homepage": "https://github.com/Artasov/orcestr-commerce-solana/tree/main/frontend/packages/ui#readme",
+  "bugs": {
+    "url": "https://github.com/Artasov/orcestr-commerce-solana/issues"
+  },
+  "type": "module",
+  "sideEffects": [
+    "./dist/styles.css"
+  ],
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "README.md",
+    "README.ru.md",
+    "TRADEMARKS.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./i18n": {
+      "types": "./dist/i18n.d.ts",
+      "import": "./dist/i18n.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@orcestr/commerce-solana-core": "0.1.0",
+    "qrcode": "1.5.4"
+  },
+  "peerDependencies": {
+    "@orcestr/ui": "^0.7.4",
+    "react": "^19.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -b --pretty false",
+    "build": "tsc -b && node scripts/copy-styles.mjs",
+    "prepack": "node ../../scripts/sync-package-legal.mjs ui && npm run build",
+    "pack:dry-run": "npm pack --dry-run"
+  }
+}

@@ -1,0 +1,155 @@
+name: Publish Python package
+run-name: Publish orcestr-commerce-solana - ${{ inputs.version && format('python-v{0}', inputs.version) || github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'python-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing python-vX.Y.Z tag version to publish
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify Python release
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - id: release
+        name: Resolve release version
+        shell: bash
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$DISPATCH_VERSION"
+          else
+            version="${GITHUB_REF_NAME#python-v}"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported release version: $version" >&2
+            exit 1
+          fi
+
+          echo "tag=python-v${version}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+          fetch-depth: 0
+      - name: Verify annotated tag is merged to main
+        shell: bash
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          if [[ "$(git cat-file -t "$TAG")" != "tag" ]]; then
+            echo "Release ref $TAG must be an annotated tag." >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "Release tag $TAG is not contained in origin/main." >&2
+            exit 1
+          fi
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Check package version against tag
+        shell: bash
+        env:
+          EXPECTED: ${{ steps.release.outputs.version }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          expected = os.environ["EXPECTED"]
+          actual = tomllib.loads(
+              pathlib.Path("backend/pyproject.toml").read_text(encoding="utf-8")
+          )["project"]["version"]
+          assert actual == expected, (actual, expected)
+          PY
+      - name: Test and build
+        working-directory: backend
+        run: |
+          uv sync --frozen
+          uv run pytest -q
+          uv build --no-sources
+          uvx twine check dist/*
+          wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          test -n "$wheel"
+          uv venv "$RUNNER_TEMP/orcestr-commerce-solana-release"
+          uv pip install \
+            --python "$RUNNER_TEMP/orcestr-commerce-solana-release/bin/python" \
+            "$wheel"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/orcestr-commerce-solana-release/bin/python" - <<'PY'
+          from importlib.metadata import version
+
+          import orcestr_commerce_solana as package
+
+          assert package.__version__ == version("orcestr-commerce-solana")
+          assert package.__version__ == "${{ steps.release.outputs.version }}"
+          PY
+      - name: Upload verified distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-dist
+          path: backend/dist/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish orcestr-commerce-solana to PyPI
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Download verified distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: python-dist
+          path: backend/dist
+      - name: Recheck promoted distributions
+        working-directory: backend
+        run: uvx twine check dist/*
+      - name: Publish
+        working-directory: backend
+        run: uv publish --trusted-publishing always --check-url https://pypi.org/simple
+
+  github-release:
+    name: Create Python GitHub release
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub release $TAG already exists."
+          else
+            gh release create "$TAG" \
+              --verify-tag \
+              --title "orcestr-commerce-solana v${VERSION}" \
+              --notes "PyPI: https://pypi.org/project/orcestr-commerce-solana/${VERSION}/" \
+              --generate-notes
+          fi
