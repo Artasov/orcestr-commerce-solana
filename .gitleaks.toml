@@ -1,7 +1,7 @@
 [extend]
 useDefault = true
 
-[[allowlists]]
+[allowlist]
 description = "Public Solana Token-2022 payer ATA used by frozen transaction fixtures"
 regexTarget = "line"
 regexes = [
