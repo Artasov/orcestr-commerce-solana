@@ -41,7 +41,7 @@ function PaymentDialog() {
 }
 ```
 
-`SolanaCheckoutDialog` remains mounted and delegates close animation to `@orcestr/ui` Dialog. The controlled `SolanaCheckout` can also be embedded directly in an order card.
+`SolanaCheckoutDialog` remains mounted and delegates close animation to `@orcestr/ui` Dialog. The controlled `SolanaCheckout` can also be embedded directly in an order card. Pass `showHeader={false}` when a provider-neutral host dialog already renders the checkout title and description.
 
 The default expiry formatter is a deterministic UTC ISO timestamp, so server rendering cannot produce a locale/time-zone hydration mismatch. Browser-only hosts may pass `formatExpiresAt` for the user's local date and time.
 
@@ -67,7 +67,7 @@ Global providers can import `SolanaCommerceI18nProvider` from `@orcestr/commerce
 
 ## Build
 
-For local integration, build the source workspace first and point the consumer to `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react`, and `file:../../orcestr-commerce-solana/frontend/packages/ui`. Run the consumer's `npm install` before its dev server; do not use a global `npm link`. Restore `0.2.0` registry versions before a release commit.
+For local integration, build the source workspace first and point the consumer to `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react`, and `file:../../orcestr-commerce-solana/frontend/packages/ui`. Run the consumer's `npm install` before its dev server; do not use a global `npm link`. Restore registry versions before a release commit (`0.2.1` for UI and `0.2.0` for core/react).
 
 ```bash
 npm run typecheck

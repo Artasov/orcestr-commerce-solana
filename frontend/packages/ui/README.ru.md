@@ -41,7 +41,7 @@ function PaymentDialog() {
 }
 ```
 
-`SolanaCheckoutDialog` не размонтируется при закрытии и отдаёт exit-анимацию компоненту Dialog из `@orcestr/ui`. Управляемый `SolanaCheckout` можно встроить прямо в карточку заказа.
+`SolanaCheckoutDialog` не размонтируется при закрытии и отдаёт exit-анимацию компоненту Dialog из `@orcestr/ui`. Управляемый `SolanaCheckout` можно встроить прямо в карточку заказа. Передайте `showHeader={false}`, если заголовок и описание уже выводит нейтральное к провайдеру окно host-приложения.
 
 Стандартный formatter срока действия выводит детерминированный UTC ISO timestamp, поэтому server render не создаёт locale/time-zone hydration mismatch. Browser-only host может передать `formatExpiresAt` для локальной даты и времени пользователя.
 
@@ -67,7 +67,7 @@ QR создаётся локально библиотекой `qrcode` как im
 
 ## Сборка
 
-Для локальной интеграции сначала соберите source workspace, затем укажите в consumer-е `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react` и `file:../../orcestr-commerce-solana/frontend/packages/ui`. Выполните `npm install` consumer-а до запуска dev server; глобальный `npm link` не используйте. Перед релизным коммитом верните registry-версии `0.2.0`.
+Для локальной интеграции сначала соберите source workspace, затем укажите в consumer-е `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react` и `file:../../orcestr-commerce-solana/frontend/packages/ui`. Выполните `npm install` consumer-а до запуска dev server; глобальный `npm link` не используйте. Перед релизным коммитом верните registry-версии (`0.2.1` для UI и `0.2.0` для core/react).
 
 ```bash
 npm run typecheck
