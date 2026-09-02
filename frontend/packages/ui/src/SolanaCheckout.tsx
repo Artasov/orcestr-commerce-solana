@@ -9,7 +9,6 @@ import {
   type SolanaPaymentStatus,
 } from "@orcestr/commerce-solana-core";
 import {
-  Alert,
   Badge,
   Button,
   Card,
@@ -18,7 +17,7 @@ import {
   Stack,
   Text,
 } from "@orcestr/ui";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useSolanaCommerceMessages } from "./i18n.js";
 import { SolanaPaymentState } from "./SolanaPaymentState.js";
@@ -79,6 +78,13 @@ export function SolanaCheckout({
     ACTIONABLE_STATUSES.has(intent.state) &&
     actionChecked &&
     activeAction === null;
+  useAutomaticActionRequest({
+    paymentPublicId: intent.paymentPublicId,
+    action,
+    activeWithoutAction,
+    requestingAction,
+    onRequestAction,
+  });
   const { settlement } = intent;
   const mint = settlement.kind === "token" ? settlement.mint : null;
 
@@ -106,14 +112,6 @@ export function SolanaCheckout({
             </Badge>
           </header>
         ) : null}
-
-        <Alert
-          tone={settlement.cluster === "mainnet-beta" ? "warning" : "info"}
-        >
-          {settlement.cluster === "mainnet-beta"
-            ? messages.checkout.mainnetNotice
-            : messages.checkout.testNetworkNotice}
-        </Alert>
 
         <SolanaPaymentState
           status={intent.state}
@@ -225,23 +223,6 @@ export function SolanaCheckout({
           </div>
         ) : null}
 
-        {activeWithoutAction ? (
-          <Alert tone="info">{messages.checkout.actionUnavailable}</Alert>
-        ) : null}
-
-        {activeWithoutAction && onRequestAction ? (
-          <Button
-            fullWidth
-            type="button"
-            loading={requestingAction}
-            onClick={onRequestAction}
-          >
-            {requestingAction
-              ? messages.actions.requestingAction
-              : messages.actions.requestAction}
-          </Button>
-        ) : null}
-
         {onCancel && ACTIONABLE_STATUSES.has(intent.state) ? (
           <Button type="button" v="ghost" tone="danger" onClick={onCancel}>
             {messages.actions.cancel}
@@ -250,6 +231,36 @@ export function SolanaCheckout({
       </Stack>
     </Card>
   );
+}
+
+function useAutomaticActionRequest({
+  paymentPublicId,
+  action,
+  activeWithoutAction,
+  requestingAction,
+  onRequestAction,
+}: {
+  readonly paymentPublicId: string;
+  readonly action: SolanaPaymentIntent["action"];
+  readonly activeWithoutAction: boolean;
+  readonly requestingAction: boolean;
+  readonly onRequestAction: (() => void) | undefined;
+}) {
+  const requestedKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!activeWithoutAction || requestingAction || !onRequestAction) return;
+    const requestKey = `${paymentPublicId}:${action?.expiresAt ?? "missing"}`;
+    if (requestedKey.current === requestKey) return;
+    requestedKey.current = requestKey;
+    onRequestAction();
+  }, [
+    action?.expiresAt,
+    activeWithoutAction,
+    onRequestAction,
+    paymentPublicId,
+    requestingAction,
+  ]);
 }
 
 export type SolanaCheckoutDialogProps = SolanaCheckoutProps & {

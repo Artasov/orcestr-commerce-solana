@@ -2,6 +2,12 @@
 
 All notable changes to Orcestr Commerce Solana are documented in this file.
 
+## Frontend UI 0.3.0 - 2026-09-02
+
+- Request a fresh short-lived payment action automatically when checkout opens without an active action or its current action expires.
+- Remove the mainnet notice, inactive-action notice, and manual payment-link button from checkout.
+- Show QR, wallet deep link, and copy controls as soon as the automatic action request completes.
+
 ## Frontend UI 0.2.1 - 2026-09-02
 
 - Add composable `showHeader` control to `SolanaCheckout`.
