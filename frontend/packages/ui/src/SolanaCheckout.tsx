@@ -41,6 +41,7 @@ export type SolanaCheckoutProps = {
   readonly submittingWalletPayment?: boolean;
   readonly requestingAction?: boolean;
   readonly showQr?: boolean;
+  readonly showHeader?: boolean;
   readonly onConnectWallet?: () => void;
   readonly onPayWithWallet?: () => void;
   readonly onCancel?: () => void;
@@ -57,6 +58,7 @@ export function SolanaCheckout({
   submittingWalletPayment = false,
   requestingAction = false,
   showQr = true,
+  showHeader = true,
   onConnectWallet,
   onPayWithWallet,
   onCancel,
@@ -87,21 +89,23 @@ export function SolanaCheckout({
       size={3}
     >
       <Stack g={4}>
-        <header className="ocs-checkout-header">
-          <div>
-            <Text as="h2" fw={800} fs="20px">
-              {messages.checkout.title}
-            </Text>
-            <Text as="p" tone="muted" fs="14px">
-              {messages.checkout.description}
-            </Text>
-          </div>
-          <Badge
-            tone={settlement.cluster === "mainnet-beta" ? "warning" : "info"}
-          >
-            {clusterLabel(settlement.cluster)}
-          </Badge>
-        </header>
+        {showHeader ? (
+          <header className="ocs-checkout-header">
+            <div>
+              <Text as="h2" fw={800} fs="20px">
+                {messages.checkout.title}
+              </Text>
+              <Text as="p" tone="muted" fs="14px">
+                {messages.checkout.description}
+              </Text>
+            </div>
+            <Badge
+              tone={settlement.cluster === "mainnet-beta" ? "warning" : "info"}
+            >
+              {clusterLabel(settlement.cluster)}
+            </Badge>
+          </header>
+        ) : null}
 
         <Alert
           tone={settlement.cluster === "mainnet-beta" ? "warning" : "info"}
@@ -264,7 +268,7 @@ export function SolanaCheckoutDialog({
       <Dialog.Content className="ocs-checkout-dialog">
         <Dialog.Title>{messages.checkout.title}</Dialog.Title>
         <Dialog.Description>{messages.checkout.description}</Dialog.Description>
-        <SolanaCheckout {...checkoutProps} />
+        <SolanaCheckout {...checkoutProps} showHeader={false} />
         <Dialog.Close>
           <Button fullWidth v="ghost" type="button">
             {messages.actions.close}

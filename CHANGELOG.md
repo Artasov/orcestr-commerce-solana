@@ -2,6 +2,11 @@
 
 All notable changes to Orcestr Commerce Solana are documented in this file.
 
+## Frontend UI 0.2.1 - 2026-09-02
+
+- Add composable `showHeader` control to `SolanaCheckout`.
+- Remove the duplicate inner title from `SolanaCheckoutDialog`.
+
 ## 0.2.2 - 2026-09-01
 
 - Replace attacker-amplifiable reference pagination with one budget-plus-one history window, 16 candidate preparations per intent, and 32 preparations per reconciliation pass by default.
