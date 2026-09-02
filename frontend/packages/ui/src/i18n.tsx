@@ -23,12 +23,9 @@ export type SolanaCommerceMessages = {
     readonly nativeAsset: string;
     readonly recipient: string;
     readonly expires: string;
-    readonly mainnetNotice: string;
-    readonly testNetworkNotice: string;
     readonly qrAlt: string;
     readonly qrLoading: string;
     readonly qrUnavailable: string;
-    readonly actionUnavailable: string;
     readonly unknownReason: string;
   };
   readonly actions: {
@@ -41,8 +38,6 @@ export type SolanaCommerceMessages = {
     readonly copied: string;
     readonly cancel: string;
     readonly retry: string;
-    readonly requestAction: string;
-    readonly requestingAction: string;
     readonly close: string;
   };
   readonly assetSelector: {
@@ -75,14 +70,9 @@ export const solanaCommerceMessages: Record<
       nativeAsset: "Native SOL",
       recipient: "Recipient",
       expires: "Expires",
-      mainnetNotice: "This payment uses Solana mainnet and transfers real assets.",
-      testNetworkNotice:
-        "This is a test-network payment. Do not send mainnet assets.",
       qrAlt: "Solana payment QR code",
       qrLoading: "Generating payment QR code",
       qrUnavailable: "The QR code could not be generated.",
-      actionUnavailable:
-        "The short-lived wallet request is not active. Request a fresh link for this payment.",
       unknownReason: "The backend reported a payment verification issue.",
     },
     actions: {
@@ -95,8 +85,6 @@ export const solanaCommerceMessages: Record<
       copied: "Copied",
       cancel: "Cancel payment",
       retry: "Try again",
-      requestAction: "Get a new payment link",
-      requestingAction: "Creating link...",
       close: "Close",
     },
     assetSelector: {
@@ -182,14 +170,9 @@ export const solanaCommerceMessages: Record<
       nativeAsset: "Нативный SOL",
       recipient: "Получатель",
       expires: "Действует до",
-      mainnetNotice: "Платёж проходит в Solana mainnet и переводит реальные активы.",
-      testNetworkNotice:
-        "Это тестовая сеть. Не отправляйте сюда активы из mainnet.",
       qrAlt: "QR-код оплаты через Solana",
       qrLoading: "Создаём QR-код оплаты",
       qrUnavailable: "Не удалось создать QR-код.",
-      actionUnavailable:
-        "Короткоживущий запрос кошелька неактивен. Получите новую ссылку для этого платежа.",
       unknownReason: "Backend сообщил о проблеме при проверке платежа.",
     },
     actions: {
@@ -202,8 +185,6 @@ export const solanaCommerceMessages: Record<
       copied: "Скопировано",
       cancel: "Отменить платёж",
       retry: "Попробовать снова",
-      requestAction: "Получить новую ссылку",
-      requestingAction: "Создаём ссылку...",
       close: "Закрыть",
     },
     assetSelector: {

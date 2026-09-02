@@ -55,7 +55,7 @@ The default expiry formatter is a deterministic UTC ISO timestamp, so server ren
 - `SolanaCommerceI18nProvider`
 - `solanaPaymentRendererDescriptor`
 
-The checkout visibly separates preparing, waiting, observed, confirmed, paid, expired, cancelled, failed, and review states. `paid` is emitted only after finalized verification and atomic product application. It shows cluster, exact display amount, Token-2022 mint, recipient, and the current action expiry. Invalid or expired capabilities fail closed: their QR, deep link, and copy controls disappear and `onRequestAction` can request a fresh short-lived link without creating a duplicate payment. A wallet submission never changes the UI to paid by itself.
+The checkout visibly separates preparing, waiting, observed, confirmed, paid, expired, cancelled, failed, and review states. `paid` is emitted only after finalized verification and atomic product application. It shows cluster, exact display amount, Token-2022 mint, recipient, and the current action expiry. Invalid or expired capabilities fail closed: their QR, deep link, and copy controls disappear while `onRequestAction` is invoked automatically to issue a fresh short-lived link without creating a duplicate payment. A wallet submission never changes the UI to paid by itself.
 
 QR codes are generated locally with `qrcode` into an image data URL; no remote QR service or third-party image execution is used. The canonical capability URI stays in component memory. The host must exclude it from telemetry, logs, storage, and error reporting.
 
@@ -67,7 +67,7 @@ Global providers can import `SolanaCommerceI18nProvider` from `@orcestr/commerce
 
 ## Build
 
-For local integration, build the source workspace first and point the consumer to `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react`, and `file:../../orcestr-commerce-solana/frontend/packages/ui`. Run the consumer's `npm install` before its dev server; do not use a global `npm link`. Restore registry versions before a release commit (`0.2.1` for UI and `0.2.0` for core/react).
+For local integration, build the source workspace first and point the consumer to `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react`, and `file:../../orcestr-commerce-solana/frontend/packages/ui`. Run the consumer's `npm install` before its dev server; do not use a global `npm link`. Restore registry versions before a release commit (`0.3.0` for UI and `0.2.0` for core/react).
 
 ```bash
 npm run typecheck

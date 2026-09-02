@@ -55,7 +55,7 @@ function PaymentDialog() {
 - `SolanaCommerceI18nProvider`
 - `solanaPaymentRendererDescriptor`
 
-Checkout различает preparing, waiting, observed, confirmed, paid, expired, cancelled, failed и review. Состояние `paid` появляется только после finalized-проверки и атомарного применения продукта. Он показывает сеть, точную сумму, Token-2022 mint, получателя и expiry текущего action. Некорректная или истёкшая capability обрабатывается fail-closed: QR, deep link и копирование исчезают, а `onRequestAction` может выпустить новую короткоживущую ссылку без дублирования платежа. Локальная отправка из кошелька сама по себе никогда не переводит UI в `paid`.
+Checkout различает preparing, waiting, observed, confirmed, paid, expired, cancelled, failed и review. Состояние `paid` появляется только после finalized-проверки и атомарного применения продукта. Он показывает сеть, точную сумму, Token-2022 mint, получателя и expiry текущего action. Некорректная или истёкшая capability обрабатывается fail-closed: QR, deep link и копирование исчезают, а `onRequestAction` вызывается автоматически и выпускает новую короткоживущую ссылку без дублирования платежа. Локальная отправка из кошелька сама по себе никогда не переводит UI в `paid`.
 
 QR создаётся локально библиотекой `qrcode` как image data URL. Удалённый QR-сервис и исполнение сторонних изображений не используются. Canonical URI с capability живёт только в памяти компонента; host исключает его из telemetry, логов, storage и error reporting.
 
@@ -67,7 +67,7 @@ QR создаётся локально библиотекой `qrcode` как im
 
 ## Сборка
 
-Для локальной интеграции сначала соберите source workspace, затем укажите в consumer-е `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react` и `file:../../orcestr-commerce-solana/frontend/packages/ui`. Выполните `npm install` consumer-а до запуска dev server; глобальный `npm link` не используйте. Перед релизным коммитом верните registry-версии (`0.2.1` для UI и `0.2.0` для core/react).
+Для локальной интеграции сначала соберите source workspace, затем укажите в consumer-е `file:../../orcestr-commerce-solana/frontend/packages/core`, `file:../../orcestr-commerce-solana/frontend/packages/react` и `file:../../orcestr-commerce-solana/frontend/packages/ui`. Выполните `npm install` consumer-а до запуска dev server; глобальный `npm link` не используйте. Перед релизным коммитом верните registry-версии (`0.3.0` для UI и `0.2.0` для core/react).
 
 ```bash
 npm run typecheck
