@@ -2,6 +2,10 @@
 
 All notable changes to Orcestr Commerce Solana are documented in this file.
 
+## Frontend React 0.2.2 - 2026-10-17
+
+- Compare immutable settlement and quote fields by value instead of JSON property order, preserving a live QR when equivalent snapshots have different key ordering.
+
 ## Frontend UI 0.3.2 - 2026-10-17
 
 - Support Orcestr UI 0.8 and verify checkout against UI 0.8.3 without relaxing peer dependency checks.

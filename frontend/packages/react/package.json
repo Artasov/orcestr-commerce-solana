@@ -1,6 +1,6 @@
 {
   "name": "@orcestr/commerce-solana-react",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "React Query hooks and Wallet Standard adapters for Orcestr Commerce Solana.",
   "author": "Artasov",
   "license": "MPL-2.0",
