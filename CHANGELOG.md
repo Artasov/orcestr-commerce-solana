@@ -2,6 +2,10 @@
 
 All notable changes to Orcestr Commerce Solana are documented in this file.
 
+## Frontend UI 0.3.2 - 2026-10-17
+
+- Support Orcestr UI 0.8 and verify checkout against UI 0.8.3 without relaxing peer dependency checks.
+
 ## Frontend React 0.2.1 / UI 0.3.1 - 2026-10-17
 
 - Retain a live local payment action across status-only reads for the same immutable waiting payment; clear it for terminal states, expiration or changed settlement.
