@@ -11,7 +11,6 @@ import {
 import {
   Badge,
   Button,
-  Card,
   CopyButton,
   Dialog,
   Stack,
@@ -89,10 +88,8 @@ export function SolanaCheckout({
   const mint = settlement.kind === "token" ? settlement.mint : null;
 
   return (
-    <Card
+    <section
       className={["ocs-checkout", className].filter(Boolean).join(" ")}
-      v="surface"
-      size={3}
     >
       <Stack g={4}>
         {showHeader ? (
@@ -119,7 +116,7 @@ export function SolanaCheckout({
           {...(RETRY_STATUSES.has(intent.state) && onRetry ? { onRetry } : {})}
         />
 
-        <div className="ocs-checkout-grid">
+        <div className="ocs-checkout-grid" data-has-qr={actionable && showQr && !walletSubmissionLocked ? "true" : undefined}>
           {actionable && showQr && !walletSubmissionLocked ? (
             <div className="ocs-checkout-qr">
               <SolanaQrCode uri={activeAction.uri} />
@@ -223,13 +220,17 @@ export function SolanaCheckout({
           </div>
         ) : null}
 
+        {activeWithoutAction && onRequestAction && !requestingAction ? (
+          <Button type="button" v="ghost" onClick={onRequestAction}>{messages.actions.retry}</Button>
+        ) : null}
+
         {onCancel && ACTIONABLE_STATUSES.has(intent.state) ? (
           <Button type="button" v="ghost" tone="danger" onClick={onCancel}>
             {messages.actions.cancel}
           </Button>
         ) : null}
       </Stack>
-    </Card>
+    </section>
   );
 }
 
@@ -249,13 +250,14 @@ function useAutomaticActionRequest({
   const requestedKey = useRef<string | null>(null);
 
   useEffect(() => {
+    if (action && isSolanaCheckoutActionActive(action)) requestedKey.current = null;
     if (!activeWithoutAction || requestingAction || !onRequestAction) return;
     const requestKey = `${paymentPublicId}:${action?.expiresAt ?? "missing"}`;
     if (requestedKey.current === requestKey) return;
     requestedKey.current = requestKey;
     onRequestAction();
   }, [
-    action?.expiresAt,
+    action,
     activeWithoutAction,
     onRequestAction,
     paymentPublicId,
@@ -274,17 +276,18 @@ export function SolanaCheckoutDialog({
   ...checkoutProps
 }: SolanaCheckoutDialogProps) {
   const messages = useSolanaCommerceMessages();
+  const closeDisabled = checkoutProps.submittingWalletPayment || checkoutProps.connectingWallet;
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={(nextOpen) => {if (!nextOpen && closeDisabled) return; onOpenChange(nextOpen);}}>
       <Dialog.Content className="ocs-checkout-dialog">
-        <Dialog.Title>{messages.checkout.title}</Dialog.Title>
+        <div className="ocs-checkout-dialog-header">
+          <Dialog.Title>{messages.checkout.title}</Dialog.Title>
+          <Button size={1} v="ghost" type="button" aria-label={messages.actions.close} disabled={closeDisabled} onClick={() => {if (!closeDisabled) onOpenChange(false);}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </Button>
+        </div>
         <Dialog.Description>{messages.checkout.description}</Dialog.Description>
         <SolanaCheckout {...checkoutProps} showHeader={false} />
-        <Dialog.Close>
-          <Button fullWidth v="ghost" type="button">
-            {messages.actions.close}
-          </Button>
-        </Dialog.Close>
       </Dialog.Content>
     </Dialog.Root>
   );

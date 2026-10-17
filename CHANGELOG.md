@@ -2,6 +2,13 @@
 
 All notable changes to Orcestr Commerce Solana are documented in this file.
 
+## Frontend React 0.2.1 / UI 0.3.1 - 2026-10-17
+
+- Retain a live local payment action across status-only reads for the same immutable waiting payment; clear it for terminal states, expiration or changed settlement.
+- Renew missing actions again after a previous successful issuance and offer an explicit retry after a failed request.
+- Remove the nested checkout card surface and move dialog dismissal to the header.
+- Use the full details width when no QR is available.
+
 ## Frontend UI 0.3.0 - 2026-09-02
 
 - Request a fresh short-lived payment action automatically when checkout opens without an active action or its current action expires.

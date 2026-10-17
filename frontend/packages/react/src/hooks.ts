@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useSolanaCommerceClient } from "./provider.js";
 import { solanaCommerceQueryKeys } from "./queryKeys.js";
+import {mergeIntentAction} from "./intentAction.js";
 
 export function useSolanaPaymentOptions(
   orderPublicId: string | null,
@@ -53,11 +54,15 @@ export function useSolanaPaymentIntent(
   options: { readonly enabled?: boolean } = {},
 ) {
   const client = useSolanaCommerceClient();
+  const queryClient = useQueryClient();
   const enabled = (options.enabled ?? true) && paymentPublicId !== null;
   return useQuery({
     queryKey: solanaCommerceQueryKeys.intent(paymentPublicId ?? ""),
-    queryFn: ({ signal }) =>
-      client.getPaymentIntent(paymentPublicId ?? "", signal),
+    queryFn: async ({ signal }) => {
+      const next = await client.getPaymentIntent(paymentPublicId ?? "", signal);
+      return mergeIntentAction(next, queryClient.getQueryData<SolanaPaymentIntent>(
+        solanaCommerceQueryKeys.intent(paymentPublicId ?? "")));
+    },
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
     refetchInterval: false,
