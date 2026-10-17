@@ -28,10 +28,14 @@
 
 .ocs-checkout-grid {
   display: grid;
-  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
   align-items: start;
 }
+
+.ocs-checkout-grid[data-has-qr="true"] {grid-template-columns:minmax(210px,260px) minmax(0,1fr)}
+.ocs-checkout-dialog-header {display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.ocs-checkout-dialog-header .oui-modal-title {margin:0}
 
 .ocs-checkout-qr,
 .ocs-qr-loading {
@@ -161,7 +165,7 @@
 }
 
 @media (max-width: 640px) {
-  .ocs-checkout-grid {
+  .ocs-checkout-grid, .ocs-checkout-grid[data-has-qr="true"] {
     grid-template-columns: 1fr;
   }
 
