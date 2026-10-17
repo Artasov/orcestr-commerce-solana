@@ -13,6 +13,11 @@ test("status and focus refresh preserve the same still-live QR capability", () =
   assert.equal(merged.revision, 4);
   assert.equal(mergeIntentAction({...status, revision:5}, merged, now).action, cached.action);
 });
+test("settlement and quote key order cannot remove a valid QR capability", () => {
+  const reordered = {...cached, settlement: Object.fromEntries(Object.entries(cached.settlement).reverse())};
+  reordered.settlement.quote = Object.fromEntries(Object.entries(cached.settlement.quote).reverse());
+  assert.equal(mergeIntentAction(status, reordered, now).action, cached.action);
+});
 test("expired and terminal payments never recover a cached capability", () => {
   assert.equal(mergeIntentAction(status, cached, Date.parse(cached.action.expiresAt)).action, null);
   for (const state of ["observed", "confirmed", "paid", "cancelled", "expired", "failed"]) {
